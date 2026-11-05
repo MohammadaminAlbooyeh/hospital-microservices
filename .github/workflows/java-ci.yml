@@ -1,0 +1,20 @@
+name: java-ci
+on:
+  push:
+    paths: ['services-java/**', '.github/workflows/java-ci.yml']
+  pull_request:
+    paths: ['services-java/**']
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Validate/build Java modules
+        run: mvn -B -f services-java/pom.xml -DskipTests package
+      - name: Run Java tests
+        run: mvn -B -f services-java/pom.xml test

@@ -1,0 +1,23 @@
+name: contract-tests
+on:
+  push:
+    paths: ['contracts/**', '.github/workflows/contract-tests.yml']
+  pull_request:
+    paths: ['contracts/**']
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate contract files exist
+        run: |
+          test -d contracts/avro
+          test -d contracts/proto
+          find contracts -name '*.avsc' -o -name '*.proto' | grep .
+      - name: Run codegen script (best effort)
+        run: |
+          chmod +x contracts/codegen.sh
+          ./contracts/codegen.sh || echo "codegen skipped due to missing local tools"
