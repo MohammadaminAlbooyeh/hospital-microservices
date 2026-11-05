@@ -1,0 +1,14 @@
+Hello {{ full_name }},
+
+We could not process your payment.
+
+Invoice: {{ invoice_id }}
+Payment: {{ payment_id }}
+Amount: {{ amount }} {{ currency | default('USD') }}
+{% if reason %}
+Reason: {{ reason }}
+{% endif %}
+Please check your payment details and try again through the patient portal, or contact our billing team for assistance.
+
+Kind regards,
+Hospital Billing

@@ -1,0 +1,15 @@
+Hello {{ full_name }},
+
+Your appointment {{ appointment_id }} is confirmed.
+{% if doctor_id %}
+Doctor: {{ doctor_id }}
+{% endif %}
+{% if department_id %}
+Department: {{ department_id }}
+{% endif %}
+When: {{ slot_start }}{% if slot_end %} - {{ slot_end }}{% endif %}
+
+Please arrive 15 minutes early and bring a valid photo ID and your insurance card.
+
+Kind regards,
+Hospital Appointments

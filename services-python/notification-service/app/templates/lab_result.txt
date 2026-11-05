@@ -1,0 +1,14 @@
+Hello {{ full_name }},
+
+Your lab results for order {{ lab_order_id }} (test {{ test_code }}) are now available.
+{% if result_summary %}
+Summary: {{ result_summary }}
+{% endif %}
+{% if critical %}
+IMPORTANT: This result has been flagged as critical. Please contact your care team immediately.
+{% else %}
+Please review the full report in the patient portal or discuss it with your doctor at your next visit.
+{% endif %}
+
+Kind regards,
+Hospital Laboratory Services

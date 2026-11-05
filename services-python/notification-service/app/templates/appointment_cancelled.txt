@@ -1,0 +1,10 @@
+Hello {{ full_name }},
+
+Your appointment {{ appointment_id }} has been cancelled.
+{% if reason %}
+Reason: {{ reason }}
+{% endif %}
+Please contact us or use the patient portal if you would like to book another appointment.
+
+Kind regards,
+Hospital Appointments

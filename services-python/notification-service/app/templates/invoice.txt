@@ -1,0 +1,15 @@
+Hello {{ full_name }},
+
+An invoice has been issued for your recent visit.
+
+Invoice: {{ invoice_id }}
+Total amount: {{ total_amount }} {{ currency | default('USD') }}
+Patient share: {{ patient_share }} {{ currency | default('USD') }}
+Insurance share: {{ insurer_share }} {{ currency | default('USD') }}
+{% if encounter_id %}
+Encounter: {{ encounter_id }}
+{% endif %}
+You can pay securely through the patient portal.
+
+Kind regards,
+Hospital Billing

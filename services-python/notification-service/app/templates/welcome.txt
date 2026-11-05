@@ -1,0 +1,12 @@
+Hello {{ full_name }},
+
+Welcome to Hospital. Your patient record has been created successfully.
+{% if mrn %}
+Your medical record number (MRN) is {{ mrn }}.
+{% endif %}
+You can use the patient portal to book appointments, view lab results and pay invoices.
+
+If you did not create this account, please contact our support team.
+
+Kind regards,
+Hospital Patient Services

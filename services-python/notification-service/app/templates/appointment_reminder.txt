@@ -1,0 +1,12 @@
+Hello {{ full_name }},
+
+This is a reminder for your appointment {{ appointment_id }}.
+{% if doctor_id %}
+Doctor: {{ doctor_id }}
+{% endif %}
+When: {{ slot_start }}{% if slot_end %} - {{ slot_end }}{% endif %}
+
+Please arrive 15 minutes early. Reply to this message if you need to reschedule.
+
+Kind regards,
+Hospital Appointments

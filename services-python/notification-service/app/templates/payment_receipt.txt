@@ -1,0 +1,12 @@
+Hello {{ full_name }},
+
+Thank you. We have received your payment.
+
+Payment: {{ payment_id }}
+Invoice: {{ invoice_id }}
+Amount: {{ amount }} {{ currency | default('USD') }}
+
+A receipt is available in the patient portal.
+
+Kind regards,
+Hospital Billing

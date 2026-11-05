@@ -1,0 +1,1 @@
+"""Pure analytics domain logic."""
