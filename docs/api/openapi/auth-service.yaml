@@ -1,0 +1,239 @@
+openapi: 3.0.3
+info:
+  title: auth-service
+  description: >
+    Registration, login, OTP, refresh tokens, and role-based profile lookup.
+    Fronts Keycloak for the hospital platform. Reachable through the gateway
+    at /api/v1/auth/**.
+  version: "1.0.0"
+servers:
+  - url: http://localhost:8081
+    description: Local (direct)
+  - url: http://localhost:8080
+    description: Via api-gateway
+tags:
+  - name: auth
+  - name: users
+paths:
+  /api/v1/auth/register:
+    post:
+      tags: [auth]
+      summary: Register a new user
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '201':
+          description: User registered
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/v1/auth/login:
+    post:
+      tags: [auth]
+      summary: Log in with email and password
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Authenticated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponse' }
+        '401': { description: Invalid credentials }
+  /api/v1/auth/refresh:
+    post:
+      tags: [auth]
+      summary: Exchange a refresh token for a new access token
+      operationId: refresh
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshTokenRequest' }
+      responses:
+        '200':
+          description: New token pair
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenResponse' }
+        '401': { description: Invalid or expired refresh token }
+  /api/v1/auth/logout:
+    post:
+      tags: [auth]
+      summary: Revoke a refresh token
+      operationId: logout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LogoutRequest' }
+      responses:
+        '204': { description: Logged out }
+  /api/v1/auth/otp/request:
+    post:
+      tags: [auth]
+      summary: Request a one-time passcode by email
+      operationId: requestOtp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OtpRequest' }
+      responses:
+        '202':
+          description: OTP sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string, example: "OTP sent" }
+                  expiresInSeconds: { type: integer, example: 300 }
+  /api/v1/auth/otp/verify:
+    post:
+      tags: [auth]
+      summary: Verify a one-time passcode and authenticate
+      operationId: verifyOtp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OtpVerifyRequest' }
+      responses:
+        '200':
+          description: Authenticated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponse' }
+        '400': { description: Invalid or expired code }
+  /api/v1/auth/me:
+    get:
+      tags: [auth]
+      summary: Get the current authenticated user's profile
+      operationId: me
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Current user profile
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserProfileResponse' }
+  /api/v1/auth/users:
+    get:
+      tags: [users]
+      summary: List all users (admin only)
+      operationId: listUsers
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/UserProfileResponse' }
+        '403': { description: Requires ADMIN role }
+  /api/v1/auth/users/{id}:
+    get:
+      tags: [users]
+      summary: Get a user by ID (admin only)
+      operationId: getUser
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserProfileResponse' }
+        '403': { description: Requires ADMIN role }
+        '404': { description: User not found }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    BadRequest:
+      description: Validation error
+  schemas:
+    RegisterRequest:
+      type: object
+      required: [email, password, firstName, lastName]
+      properties:
+        email: { type: string, format: email, maxLength: 320 }
+        password: { type: string, minLength: 8, maxLength: 128 }
+        firstName: { type: string, maxLength: 128 }
+        lastName: { type: string, maxLength: 128 }
+        phone: { type: string, maxLength: 64 }
+        role: { type: string, description: "Optional; defaults applied server-side" }
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+    LogoutRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken: { type: string }
+    OtpRequest:
+      type: object
+      required: [email]
+      properties:
+        email: { type: string, format: email }
+    OtpVerifyRequest:
+      type: object
+      required: [email, code]
+      properties:
+        email: { type: string, format: email }
+        code: { type: string, pattern: '^\d{6}$', description: "6-digit code" }
+    RefreshTokenRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken: { type: string }
+    TokenResponse:
+      type: object
+      properties:
+        accessToken: { type: string }
+        refreshToken: { type: string }
+        tokenType: { type: string, example: "Bearer" }
+        expiresIn: { type: integer, format: int64 }
+    AuthResponse:
+      type: object
+      properties:
+        accessToken: { type: string }
+        refreshToken: { type: string }
+        tokenType: { type: string, example: "Bearer" }
+        expiresIn: { type: integer, format: int64 }
+        user: { $ref: '#/components/schemas/UserProfileResponse' }
+    UserProfileResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        firstName: { type: string }
+        lastName: { type: string }
+        phone: { type: string, nullable: true }
+        roles:
+          type: array
+          items: { type: string }
+        enabled: { type: boolean }
+        emailVerified: { type: boolean }
+        createdAt: { type: string, format: date-time }

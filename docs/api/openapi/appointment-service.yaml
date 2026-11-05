@@ -1,0 +1,151 @@
+openapi: 3.0.3
+info:
+  title: appointment-service
+  description: >
+    Slot management, booking, rescheduling, cancellation. Prevents
+    double-booking under concurrency using optimistic locking on the slot
+    (JPA @Version); a lost race returns 409 SLOT_ALREADY_BOOKED
+    (docs/architecture.md §5.5).
+  version: "1.0.0"
+servers:
+  - url: http://localhost:8083
+  - url: http://localhost:8080
+    description: Via api-gateway (/api/v1/appointments/**, /api/v1/slots/**)
+paths:
+  /api/v1/appointments:
+    post:
+      summary: Book an appointment (optimistic lock on the slot)
+      operationId: book
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BookAppointmentRequest' }
+      responses:
+        '201':
+          description: Appointment booked
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppointmentResponse' }
+        '409': { description: SLOT_ALREADY_BOOKED — the slot changed under the request }
+    get:
+      summary: Search appointments
+      description: >
+        At least one of doctorId+date, patientId, or doctorId is expected;
+        an empty query returns an empty list.
+      operationId: search
+      parameters:
+        - name: patientId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: doctorId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: date
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Matching appointments
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/AppointmentResponse' }
+  /api/v1/appointments/{id}:
+    get:
+      summary: Get an appointment by ID
+      operationId: get
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Appointment
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppointmentResponse' }
+        '404': { description: Appointment not found }
+  /api/v1/appointments/{id}/reschedule:
+    put:
+      summary: Reschedule an appointment to a new slot
+      operationId: reschedule
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RescheduleAppointmentRequest' }
+      responses:
+        '200':
+          description: Rescheduled appointment
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppointmentResponse' }
+        '409': { description: SLOT_ALREADY_BOOKED — the new slot changed under the request }
+  /api/v1/appointments/{id}/cancel:
+    put:
+      summary: Cancel an appointment and release its slot
+      operationId: cancel
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CancelAppointmentRequest' }
+      responses:
+        '200':
+          description: Cancelled appointment
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppointmentResponse' }
+components:
+  schemas:
+    AppointmentStatus:
+      type: string
+      enum: [BOOKED, RESCHEDULED, CANCELLED, COMPLETED, NO_SHOW]
+    BookAppointmentRequest:
+      type: object
+      required: [patientId, doctorId, slotStart]
+      properties:
+        patientId: { type: string, format: uuid }
+        doctorId: { type: string, format: uuid }
+        departmentId: { type: string, format: uuid, nullable: true }
+        slotStart: { type: string, format: date-time }
+        slotEnd: { type: string, format: date-time, nullable: true }
+        reason: { type: string, nullable: true }
+    RescheduleAppointmentRequest:
+      type: object
+      required: [slotStart]
+      properties:
+        slotStart: { type: string, format: date-time }
+        slotEnd: { type: string, format: date-time, nullable: true }
+    CancelAppointmentRequest:
+      type: object
+      properties:
+        reason: { type: string, nullable: true }
+    AppointmentResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        patientId: { type: string, format: uuid }
+        doctorId: { type: string, format: uuid }
+        departmentId: { type: string, format: uuid, nullable: true }
+        slotStart: { type: string, format: date-time }
+        slotEnd: { type: string, format: date-time, nullable: true }
+        status: { $ref: '#/components/schemas/AppointmentStatus' }
+        reason: { type: string, nullable: true }
+        cancelledAt: { type: string, format: date-time, nullable: true }
+        version: { type: integer, format: int64, description: "Optimistic lock version" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }

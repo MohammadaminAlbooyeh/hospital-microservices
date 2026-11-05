@@ -1,0 +1,140 @@
+openapi: 3.0.3
+info:
+  title: payment-service
+  description: >
+    Payment gateway integration, instalments, refunds, idempotency keys.
+    Create requires an Idempotency-Key header; same key + same body replays
+    the original response, same key + different body returns
+    409 IDEMPOTENCY_KEY_REUSED (docs/architecture.md §5.4).
+  version: "1.0.0"
+servers:
+  - url: http://localhost:8092
+  - url: http://localhost:8080
+    description: Via api-gateway (/api/v1/payments/**)
+paths:
+  /api/v1/payments:
+    post:
+      summary: Create (charge) a payment
+      operationId: create
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreatePaymentRequest' }
+      responses:
+        '201':
+          description: New payment created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentResponse' }
+        '200':
+          description: Idempotent replay of an existing payment for this key
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentResponse' }
+        '400': { description: Missing Idempotency-Key header }
+        '409': { description: IDEMPOTENCY_KEY_REUSED — same key, different request body }
+    get:
+      summary: List payments
+      operationId: list
+      parameters:
+        - name: invoiceId
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Matching payments
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PaymentResponse' }
+  /api/v1/payments/{id}:
+    get:
+      summary: Get a payment by ID
+      operationId: get
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Payment
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentResponse' }
+        '404': { description: Payment not found }
+  /api/v1/payments/{id}/refund:
+    post:
+      summary: Refund a payment (full if amount omitted, otherwise partial)
+      operationId: refund
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefundRequest' }
+      responses:
+        '200':
+          description: Refunded payment
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentResponse' }
+components:
+  schemas:
+    PaymentMethod:
+      type: string
+      enum: [CARD, CASH, INSURANCE, BANK_TRANSFER]
+    PaymentStatus:
+      type: string
+      enum: [PROCESSING, CAPTURED, FAILED, REFUNDED, PARTIALLY_REFUNDED]
+    CreatePaymentRequest:
+      type: object
+      required: [invoiceId, amount, currency, method]
+      properties:
+        invoiceId: { type: string, format: uuid }
+        patientId: { type: string, format: uuid, nullable: true }
+        amount: { type: number, format: double }
+        currency: { type: string }
+        method: { $ref: '#/components/schemas/PaymentMethod' }
+        simulateFailure:
+          type: boolean
+          nullable: true
+          description: Test hook to force a simulated gateway decline
+    RefundRequest:
+      type: object
+      properties:
+        amount:
+          type: number
+          format: double
+          minimum: 0.01
+          nullable: true
+          description: Omit for a full refund
+    PaymentResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        invoiceId: { type: string, format: uuid }
+        patientId: { type: string, format: uuid, nullable: true }
+        amount: { type: number, format: double }
+        currency: { type: string }
+        method: { $ref: '#/components/schemas/PaymentMethod' }
+        status: { $ref: '#/components/schemas/PaymentStatus' }
+        idempotencyKey: { type: string }
+        gatewayReference: { type: string, nullable: true }
+        failureReason: { type: string, nullable: true }
+        processedAt: { type: string, format: date-time, nullable: true }
+        refundedAt: { type: string, format: date-time, nullable: true }
+        refundAmount: { type: number, format: double, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }

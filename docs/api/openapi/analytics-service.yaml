@@ -1,0 +1,212 @@
+openapi: 3.0.3
+info:
+  title: analytics-service
+  description: >
+    Management dashboards: average wait time, no-show rate, bed occupancy,
+    revenue by department. Builds its read model from Kafka events
+    (AppointmentBooked/Cancelled, EncounterCompleted, InvoiceIssued, etc.,
+    not shown here); the REST API below is the synchronous query surface,
+    plus two internal endpoints for the simulated-data facts.
+  version: "1.0.0"
+servers:
+  - url: http://localhost:8004
+  - url: http://localhost:8080
+    description: Via api-gateway (/api/v1/analytics/**)
+paths:
+  /api/v1/analytics/overview:
+    get:
+      summary: Aggregate KPI overview for a date window
+      operationId: get_overview
+      parameters:
+        - { $ref: '#/components/parameters/From' }
+        - { $ref: '#/components/parameters/To' }
+      responses:
+        '200':
+          description: Overview KPIs
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OverviewResponse' }
+  /api/v1/analytics/wait-times:
+    get:
+      summary: Average/median wait time by department
+      operationId: get_wait_times
+      parameters:
+        - { $ref: '#/components/parameters/From' }
+        - { $ref: '#/components/parameters/To' }
+      responses:
+        '200':
+          description: Wait-time stats per department
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/WaitTimeItem' }
+  /api/v1/analytics/no-show-rate:
+    get:
+      summary: No-show rate overview, overall and by department
+      operationId: get_no_show_rate
+      parameters:
+        - { $ref: '#/components/parameters/From' }
+        - { $ref: '#/components/parameters/To' }
+      responses:
+        '200':
+          description: No-show overview
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NoShowResponse' }
+  /api/v1/analytics/bed-occupancy:
+    get:
+      summary: Bed occupancy rate as of now, within the window
+      operationId: get_bed_occupancy
+      parameters:
+        - { $ref: '#/components/parameters/From' }
+        - { $ref: '#/components/parameters/To' }
+      responses:
+        '200':
+          description: Bed occupancy
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BedOccupancyResponse' }
+  /api/v1/analytics/revenue-by-department:
+    get:
+      summary: Revenue broken down by department
+      operationId: get_revenue_by_department
+      parameters:
+        - { $ref: '#/components/parameters/From' }
+        - { $ref: '#/components/parameters/To' }
+      responses:
+        '200':
+          description: Revenue per department
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/RevenueByDepartmentItem' }
+  /api/v1/analytics/internal/appointments/{appointment_id}/status:
+    post:
+      summary: "Internal: update the status of all appointment facts for an appointment ID"
+      operationId: update_appointment_status
+      parameters:
+        - name: appointment_id
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AppointmentStatusUpdate' }
+      responses:
+        '200':
+          description: Updated fact count
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppointmentStatusResponse' }
+        '404': { description: Appointment not found }
+  /api/v1/analytics/internal/seed:
+    post:
+      summary: "Internal: seed demo fact data (requires ANALYTICS_SEED_ENABLED=true)"
+      operationId: seed_demo_data
+      responses:
+        '200':
+          description: Seed result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SeedResponse' }
+        '403': { description: Seeding is disabled }
+components:
+  parameters:
+    From:
+      name: from
+      in: query
+      schema: { type: string, format: date }
+    To:
+      name: to
+      in: query
+      schema: { type: string, format: date }
+  schemas:
+    WaitTimeItem:
+      type: object
+      properties:
+        department_id: { type: string }
+        encounters: { type: integer }
+        average_wait_minutes: { type: number, format: double }
+        median_wait_minutes: { type: number, format: double }
+    NoShowDepartmentItem:
+      type: object
+      properties:
+        department_id: { type: string }
+        total_appointments: { type: integer }
+        no_show_count: { type: integer }
+        no_show_rate: { type: number, format: double }
+    NoShowResponse:
+      type: object
+      properties:
+        total_appointments: { type: integer }
+        eligible_appointments: { type: integer }
+        booked_count: { type: integer }
+        completed_count: { type: integer }
+        cancelled_count: { type: integer }
+        no_show_count: { type: integer }
+        no_show_rate: { type: number, format: double }
+        by_department:
+          type: array
+          items: { $ref: '#/components/schemas/NoShowDepartmentItem' }
+    BedOccupancyResponse:
+      type: object
+      properties:
+        occupied_beds: { type: integer }
+        total_beds: { type: integer }
+        occupancy_rate: { type: number, format: double }
+        as_of: { type: string, format: date-time }
+    RevenueByDepartmentItem:
+      type: object
+      properties:
+        department_id: { type: string }
+        currency: { type: string }
+        invoice_count: { type: integer }
+        total_revenue: { type: number, format: double }
+        patient_revenue: { type: number, format: double }
+        insurer_revenue: { type: number, format: double }
+    OverviewResponse:
+      type: object
+      properties:
+        appointments_total: { type: integer }
+        eligible_appointments: { type: integer }
+        booked: { type: integer }
+        cancelled: { type: integer }
+        completed: { type: integer }
+        no_show: { type: integer }
+        no_show_rate: { type: number, format: double }
+        encounters_total: { type: integer }
+        average_wait_minutes: { type: number, format: double, nullable: true }
+        median_wait_minutes: { type: number, format: double, nullable: true }
+        revenue_total: { type: number, format: double }
+        patient_revenue_total: { type: number, format: double }
+        insurer_revenue_total: { type: number, format: double }
+        occupied_beds: { type: integer }
+        total_beds: { type: integer }
+        occupancy_rate: { type: number, format: double }
+        generated_at: { type: string, format: date-time }
+    AppointmentStatusUpdate:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [BOOKED, CANCELLED, NO_SHOW, COMPLETED] }
+    AppointmentStatusResponse:
+      type: object
+      properties:
+        appointment_id: { type: string }
+        status: { type: string }
+        updated: { type: integer }
+    SeedResponse:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        seeded_appointments: { type: integer }
+        seeded_encounters: { type: integer }
+        seeded_invoices: { type: integer }
+        skipped_existing: { type: integer }
+        event_ids:
+          type: array
+          items: { type: string }

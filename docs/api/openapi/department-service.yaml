@@ -1,0 +1,275 @@
+openapi: 3.0.3
+info:
+  title: department-service
+  description: >
+    Departments, rooms, beds, and equipment.
+  version: "1.0.0"
+servers:
+  - url: http://localhost:8085
+  - url: http://localhost:8080
+    description: Via api-gateway (/api/v1/departments/**, /api/v1/rooms/**, /api/v1/beds/**)
+paths:
+  /api/v1/departments:
+    post:
+      summary: Create a department
+      operationId: create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DepartmentRequest' }
+      responses:
+        '201':
+          description: Department created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DepartmentResponse' }
+    get:
+      summary: List departments
+      operationId: list
+      responses:
+        '200':
+          description: Departments
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/DepartmentResponse' }
+  /api/v1/departments/{id}:
+    get:
+      summary: Get a department by ID
+      operationId: get
+      parameters: [{ $ref: '#/components/parameters/DepartmentId' }]
+      responses:
+        '200':
+          description: Department
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DepartmentResponse' }
+        '404': { description: Department not found }
+    put:
+      summary: Update a department
+      operationId: update
+      parameters: [{ $ref: '#/components/parameters/DepartmentId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DepartmentRequest' }
+      responses:
+        '200':
+          description: Updated department
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DepartmentResponse' }
+    delete:
+      summary: Delete a department
+      operationId: delete
+      parameters: [{ $ref: '#/components/parameters/DepartmentId' }]
+      responses:
+        '204': { description: Deleted }
+  /api/v1/departments/{id}/rooms:
+    post:
+      summary: Add a room to a department
+      operationId: addRoom
+      parameters: [{ $ref: '#/components/parameters/DepartmentId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RoomRequest' }
+      responses:
+        '201':
+          description: Room created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RoomResponse' }
+    get:
+      summary: List rooms in a department
+      operationId: getRooms
+      parameters: [{ $ref: '#/components/parameters/DepartmentId' }]
+      responses:
+        '200':
+          description: Rooms
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/RoomResponse' }
+  /api/v1/rooms/{roomId}/beds:
+    post:
+      summary: Add a bed to a room
+      operationId: addBed
+      parameters: [{ $ref: '#/components/parameters/RoomId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BedRequest' }
+      responses:
+        '201':
+          description: Bed created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BedResponse' }
+    get:
+      summary: List beds in a room
+      operationId: getBeds
+      parameters: [{ $ref: '#/components/parameters/RoomId' }]
+      responses:
+        '200':
+          description: Beds
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/BedResponse' }
+  /api/v1/rooms/{roomId}/availability:
+    get:
+      summary: Get availability summary for a room
+      operationId: roomAvailability
+      parameters: [{ $ref: '#/components/parameters/RoomId' }]
+      responses:
+        '200':
+          description: Availability summary (free-form map)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /api/v1/beds:
+    get:
+      summary: List all available beds across departments
+      operationId: availableBeds
+      responses:
+        '200':
+          description: Available beds
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/BedResponse' }
+  /api/v1/beds/{bedId}/status:
+    put:
+      summary: Update a bed's status
+      operationId: updateBedStatus
+      parameters:
+        - name: bedId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: status
+          in: query
+          required: true
+          schema: { $ref: '#/components/schemas/BedStatus' }
+      responses:
+        '200':
+          description: Updated bed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BedResponse' }
+  /api/v1/departments/{id}/equipment:
+    post:
+      summary: Add equipment to a department
+      operationId: addEquipment
+      parameters: [{ $ref: '#/components/parameters/DepartmentId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EquipmentRequest' }
+      responses:
+        '201':
+          description: Equipment added
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EquipmentResponse' }
+    get:
+      summary: List equipment in a department
+      operationId: getEquipment
+      parameters: [{ $ref: '#/components/parameters/DepartmentId' }]
+      responses:
+        '200':
+          description: Equipment
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/EquipmentResponse' }
+components:
+  parameters:
+    DepartmentId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    RoomId:
+      name: roomId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    BedStatus:
+      type: string
+      enum: [AVAILABLE, OCCUPIED, MAINTENANCE, RESERVED]
+    EquipmentStatus:
+      type: string
+      enum: [OPERATIONAL, MAINTENANCE, OUT_OF_SERVICE]
+    DepartmentRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        floor: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+    DepartmentResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        floor: { type: string, nullable: true }
+        phone: { type: string, nullable: true }
+        version: { type: integer, format: int64 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    RoomRequest:
+      type: object
+      required: [roomNumber, roomType]
+      properties:
+        roomNumber: { type: string }
+        roomType: { type: string }
+    RoomResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        departmentId: { type: string, format: uuid }
+        roomNumber: { type: string }
+        roomType: { type: string }
+    BedRequest:
+      type: object
+      required: [bedNumber]
+      properties:
+        bedNumber: { type: string }
+        status: { $ref: '#/components/schemas/BedStatus' }
+    BedResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        roomId: { type: string, format: uuid }
+        bedNumber: { type: string }
+        status: { $ref: '#/components/schemas/BedStatus' }
+    EquipmentRequest:
+      type: object
+      required: [name, quantity]
+      properties:
+        name: { type: string }
+        quantity: { type: integer }
+        status: { $ref: '#/components/schemas/EquipmentStatus' }
+    EquipmentResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        departmentId: { type: string, format: uuid }
+        name: { type: string }
+        quantity: { type: integer }
+        status: { $ref: '#/components/schemas/EquipmentStatus' }

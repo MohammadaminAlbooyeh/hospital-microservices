@@ -1,0 +1,144 @@
+openapi: 3.0.3
+info:
+  title: ehr-service
+  description: >
+    Electronic health record: clinical notes, ICD-10 diagnoses, history.
+    Append-only and versioned — medical records are never deleted; a new
+    note supersedes the previous one via supersedesId.
+  version: "1.0.0"
+servers:
+  - url: http://localhost:8087
+  - url: http://localhost:8080
+    description: Via api-gateway (/api/v1/ehr/**)
+paths:
+  /api/v1/ehr/notes:
+    post:
+      summary: Create a clinical note (new version; supersedes the previous one if any)
+      operationId: create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateClinicalNoteRequest' }
+      responses:
+        '201':
+          description: Clinical note created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClinicalNoteResponse' }
+  /api/v1/ehr/notes/{id}:
+    get:
+      summary: Get a clinical note by ID
+      operationId: get
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Clinical note
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClinicalNoteResponse' }
+        '404': { description: Note not found }
+  /api/v1/ehr/patients/{patientId}/current:
+    get:
+      summary: Get the current (latest) clinical note for a patient
+      operationId: current
+      parameters:
+        - name: patientId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Current clinical note
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClinicalNoteResponse' }
+        '404': { description: No note on file }
+  /api/v1/ehr/patients/{patientId}/history:
+    get:
+      summary: Get the full version history of clinical notes for a patient
+      operationId: history
+      parameters:
+        - name: patientId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Note history, oldest to newest or as stored
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ClinicalNoteResponse' }
+  /api/v1/ehr/patients/{patientId}/versions/{version}:
+    get:
+      summary: Get a specific version of a patient's clinical note
+      operationId: version
+      parameters:
+        - name: patientId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: version
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Clinical note at that version
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClinicalNoteResponse' }
+        '404': { description: Version not found }
+  /api/v1/ehr/patients/{patientId}/diagnoses:
+    get:
+      summary: Get the flattened list of ICD-10 diagnoses recorded for a patient
+      operationId: diagnoses
+      parameters:
+        - name: patientId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: List of diagnosis codes/descriptions
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: string }
+components:
+  schemas:
+    CreateClinicalNoteRequest:
+      type: object
+      required: [patientId, content]
+      properties:
+        patientId: { type: string, format: uuid }
+        encounterId: { type: string, format: uuid, nullable: true }
+        authorId: { type: string, format: uuid, nullable: true }
+        content: { type: string }
+        diagnoses:
+          type: array
+          items: { type: string }
+          nullable: true
+    ClinicalNoteResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        patientId: { type: string, format: uuid }
+        encounterId: { type: string, format: uuid, nullable: true }
+        authorId: { type: string, format: uuid, nullable: true }
+        version: { type: integer }
+        content: { type: string }
+        diagnoses:
+          type: array
+          items: { type: string }
+        supersedesId: { type: string, format: uuid, nullable: true }
+        entityVersion: { type: integer, format: int64 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }

@@ -1,0 +1,199 @@
+openapi: 3.0.3
+info:
+  title: patient-service
+  description: >
+    System of record for patient demographics, contact info, insurance
+    policy, allergies, and emergency contacts.
+  version: "1.0.0"
+servers:
+  - url: http://localhost:8082
+  - url: http://localhost:8080
+    description: Via api-gateway (/api/v1/patients/**)
+paths:
+  /api/v1/patients:
+    post:
+      summary: Register a new patient
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PatientRequest' }
+      responses:
+        '201':
+          description: Patient created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PatientResponse' }
+    get:
+      summary: List patients
+      operationId: list
+      security: [{ bearerAuth: [] }]
+      description: Requires ADMIN, RECEPTIONIST, DOCTOR, NURSE, or BILLING role.
+      responses:
+        '200':
+          description: List of patients
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PatientResponse' }
+        '403': { description: Insufficient role }
+  /api/v1/patients/{id}:
+    get:
+      summary: Get a patient by ID
+      operationId: get
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Patient
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PatientResponse' }
+        '404': { description: Patient not found }
+    put:
+      summary: Update a patient
+      operationId: update
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PatientRequest' }
+      responses:
+        '200':
+          description: Updated patient
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PatientResponse' }
+    delete:
+      summary: Delete a patient (admin only)
+      operationId: delete
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Deleted }
+        '403': { description: Requires ADMIN role }
+  /api/v1/patients/by-email/{email}:
+    get:
+      summary: Get a patient by email
+      operationId: getByEmail
+      parameters:
+        - name: email
+          in: path
+          required: true
+          schema: { type: string, format: email }
+      responses:
+        '200':
+          description: Patient
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PatientResponse' }
+        '404': { description: Patient not found }
+  /api/v1/patients/{id}/insurance-eligibility:
+    get:
+      summary: Check insurance eligibility for a patient's policy on file
+      description: >
+        Calls insurance-service's eligibility check. Returns
+        {eligible: false, reason: "no insurance policy on file"} if the
+        patient has no policy recorded.
+      operationId: insuranceEligibility
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Eligibility result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  eligible: { type: boolean }
+                  coveragePercent: { type: integer, nullable: true }
+                  reason: { type: string, nullable: true }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  schemas:
+    Gender:
+      type: string
+      enum: [MALE, FEMALE, OTHER, UNKNOWN]
+    InsurancePolicyRequest:
+      type: object
+      required: [provider, policyNumber, memberId]
+      properties:
+        provider: { type: string }
+        policyNumber: { type: string }
+        memberId: { type: string }
+        validFrom: { type: string, format: date, nullable: true }
+        validTo: { type: string, format: date, nullable: true }
+        coveragePercent: { type: integer, minimum: 0, maximum: 100, nullable: true }
+    InsurancePolicyResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        provider: { type: string }
+        policyNumber: { type: string }
+        memberId: { type: string }
+        validFrom: { type: string, format: date, nullable: true }
+        validTo: { type: string, format: date, nullable: true }
+        coveragePercent: { type: integer, nullable: true }
+    PatientRequest:
+      type: object
+      required: [firstName, lastName, dateOfBirth, gender, email, phone, nationalId]
+      properties:
+        firstName: { type: string }
+        lastName: { type: string }
+        dateOfBirth: { type: string, format: date }
+        gender: { $ref: '#/components/schemas/Gender' }
+        email: { type: string, format: email }
+        phone: { type: string }
+        addressLine: { type: string, nullable: true }
+        city: { type: string, nullable: true }
+        country: { type: string, nullable: true }
+        nationalId: { type: string }
+        allergies: { type: string, nullable: true }
+        emergencyContactName: { type: string, nullable: true }
+        emergencyContactPhone: { type: string, nullable: true }
+        insurancePolicy:
+          allOf: [{ $ref: '#/components/schemas/InsurancePolicyRequest' }]
+          nullable: true
+    PatientResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        mrn: { type: string, description: "Medical record number" }
+        firstName: { type: string }
+        lastName: { type: string }
+        dateOfBirth: { type: string, format: date }
+        gender: { $ref: '#/components/schemas/Gender' }
+        email: { type: string, format: email }
+        phone: { type: string }
+        addressLine: { type: string, nullable: true }
+        city: { type: string, nullable: true }
+        country: { type: string, nullable: true }
+        nationalId: { type: string }
+        allergies: { type: string, nullable: true }
+        emergencyContactName: { type: string, nullable: true }
+        emergencyContactPhone: { type: string, nullable: true }
+        insurancePolicy:
+          allOf: [{ $ref: '#/components/schemas/InsurancePolicyResponse' }]
+          nullable: true
+        version: { type: integer, format: int64, description: "Optimistic lock version" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }

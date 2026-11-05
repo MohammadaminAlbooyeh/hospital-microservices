@@ -1,0 +1,28 @@
+openapi: 3.0.3
+info:
+  title: notification-service
+  description: >
+    Email/SMS/push notifications — appointment reminders, lab-result alerts,
+    payment reminders. Primarily a Kafka consumer (all 8 domain event types)
+    and Celery worker (app/workers/celery_app.py, app/channels/sms.py,
+    app/channels/email.py); the HTTP surface currently exposes only a health
+    status endpoint.
+  version: "1.0.0"
+servers:
+  - url: http://localhost:8003
+  - url: http://localhost:8080
+    description: Via api-gateway (/api/v1/notifications/**)
+paths:
+  /api/v1/notifications/status:
+    get:
+      summary: Service status check
+      operationId: status
+      responses:
+        '200':
+          description: Status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: "ok" }

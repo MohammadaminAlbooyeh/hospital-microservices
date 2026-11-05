@@ -1,0 +1,194 @@
+openapi: 3.0.3
+info:
+  title: lab-service
+  description: >
+    Lab orders, specimen tracking, and results. Imaging referral to PACS is
+    out of phase-one scope (README §7).
+  version: "1.0.0"
+servers:
+  - url: http://localhost:8089
+  - url: http://localhost:8080
+    description: Via api-gateway (/api/v1/labs/**)
+paths:
+  /api/v1/labs/orders:
+    post:
+      summary: Create a lab order
+      operationId: createOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateLabOrderRequest' }
+      responses:
+        '201':
+          description: Lab order created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LabOrderResponse' }
+    get:
+      summary: List lab orders
+      operationId: listOrders
+      parameters:
+        - name: patientId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/LabOrderStatus' }
+      responses:
+        '200':
+          description: Matching lab orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/LabOrderResponse' }
+  /api/v1/labs/orders/{id}:
+    get:
+      summary: Get a lab order by ID
+      operationId: getOrder
+      parameters: [{ $ref: '#/components/parameters/OrderId' }]
+      responses:
+        '200':
+          description: Lab order
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LabOrderResponse' }
+        '404': { description: Order not found }
+  /api/v1/labs/orders/{id}/collect:
+    post:
+      summary: Record specimen collection for a lab order
+      operationId: collect
+      parameters: [{ $ref: '#/components/parameters/OrderId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CollectSpecimenRequest' }
+      responses:
+        '200':
+          description: Order and specimen after collection
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CollectSpecimenResponse' }
+  /api/v1/labs/orders/{id}/result:
+    post:
+      summary: Record a lab result (triggers LabResultReady event on release)
+      operationId: recordResult
+      parameters: [{ $ref: '#/components/parameters/OrderId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordLabResultRequest' }
+      responses:
+        '200':
+          description: Recorded result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LabResultResponse' }
+    get:
+      summary: Get the result for a lab order
+      operationId: getResult
+      parameters: [{ $ref: '#/components/parameters/OrderId' }]
+      responses:
+        '200':
+          description: Lab result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LabResultResponse' }
+        '404': { description: Result not available }
+  /api/v1/labs/orders/{id}/cancel:
+    post:
+      summary: Cancel a lab order
+      operationId: cancel
+      parameters: [{ $ref: '#/components/parameters/OrderId' }]
+      responses:
+        '200':
+          description: Cancelled order
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LabOrderResponse' }
+components:
+  parameters:
+    OrderId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    LabPriority:
+      type: string
+      enum: [ROUTINE, URGENT, STAT]
+    LabOrderStatus:
+      type: string
+      enum: [ORDERED, SPECIMEN_COLLECTED, RESULT_RECORDED, CANCELLED]
+    SpecimenStatus:
+      type: string
+      enum: [PENDING, COLLECTED]
+    CreateLabOrderRequest:
+      type: object
+      required: [patientId, testCode, testName, priority, orderedBy]
+      properties:
+        patientId: { type: string, format: uuid }
+        encounterId: { type: string, format: uuid, nullable: true }
+        testCode: { type: string }
+        testName: { type: string }
+        priority: { $ref: '#/components/schemas/LabPriority' }
+        orderedBy: { type: string }
+        notes: { type: string, nullable: true }
+    LabOrderResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        patientId: { type: string, format: uuid }
+        encounterId: { type: string, format: uuid, nullable: true }
+        testCode: { type: string }
+        testName: { type: string }
+        priority: { $ref: '#/components/schemas/LabPriority' }
+        status: { $ref: '#/components/schemas/LabOrderStatus' }
+        orderedAt: { type: string, format: date-time }
+        orderedBy: { type: string }
+        notes: { type: string, nullable: true }
+        version: { type: integer, format: int64 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    CollectSpecimenRequest:
+      type: object
+      required: [collectedBy]
+      properties:
+        collectedBy: { type: string }
+    SpecimenResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        orderId: { type: string, format: uuid }
+        barcode: { type: string }
+        collectedAt: { type: string, format: date-time, nullable: true }
+        collectedBy: { type: string, nullable: true }
+        status: { $ref: '#/components/schemas/SpecimenStatus' }
+    CollectSpecimenResponse:
+      type: object
+      properties:
+        order: { $ref: '#/components/schemas/LabOrderResponse' }
+        specimen: { $ref: '#/components/schemas/SpecimenResponse' }
+    RecordLabResultRequest:
+      type: object
+      required: [value]
+      properties:
+        value: { type: string }
+        unit: { type: string, nullable: true }
+        referenceRange: { type: string, nullable: true }
+        critical: { type: boolean, default: false }
+        notes: { type: string, nullable: true }
+    LabResultResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        orderId: { type: string, format: uuid }
+        value: { type: string }
+        unit: { type: string, nullable: true }
+        referenceRange: { type: string, nullable: true }
+        critical: { type: boolean }
+        resultAt: { type: string, format: date-time }
+        notes: { type: string, nullable: true }

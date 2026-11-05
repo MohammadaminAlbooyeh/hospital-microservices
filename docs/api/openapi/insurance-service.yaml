@@ -1,0 +1,246 @@
+openapi: 3.0.3
+info:
+  title: insurance-service
+  description: >
+    Eligibility checks, claim submission, claim status polling, rejection
+    handling. Consumed synchronously by patient-service (pre-check),
+    encounter-service / billing-service (eligibility and claims), and
+    participates in the invoice/payment saga compensation (claim
+    cancellation on PaymentFailed, handled via Kafka, not shown here).
+  version: "1.0.0"
+servers:
+  - url: http://localhost:8002
+  - url: http://localhost:8080
+    description: Via api-gateway (/api/v1/insurance/**)
+paths:
+  /api/v1/insurance/eligibility:
+    post:
+      summary: Check eligibility for a policy/member
+      operationId: check_policy_eligibility
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EligibilityRequest' }
+      responses:
+        '200':
+          description: Eligibility result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EligibilityResponse' }
+  /api/v1/insurance/policies:
+    post:
+      summary: Create or update a policy (upsert by policy number)
+      operationId: upsert_policy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PolicyUpsertRequest' }
+      responses:
+        '201':
+          description: Policy created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PolicyResponse' }
+        '200':
+          description: Policy updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PolicyResponse' }
+  /api/v1/insurance/policies/{policy_number}:
+    get:
+      summary: Get a policy by number
+      operationId: get_policy
+      parameters:
+        - name: policy_number
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Policy
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PolicyResponse' }
+        '404': { description: Policy not found }
+  /api/v1/insurance/claims:
+    post:
+      summary: Submit a claim (auto-adjudicated against eligibility)
+      operationId: create_claim
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ClaimCreateRequest' }
+      responses:
+        '201':
+          description: Claim submitted (status reflects auto-adjudication outcome)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClaimResponse' }
+    get:
+      summary: List claims
+      operationId: list_claims
+      parameters:
+        - name: patient_id
+          in: query
+          schema: { type: string, maxLength: 64 }
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/ClaimStatus' }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+      responses:
+        '200':
+          description: Matching claims
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ClaimResponse' }
+  /api/v1/insurance/claims/{claim_id}:
+    get:
+      summary: Get a claim by ID
+      operationId: get_claim
+      parameters: [{ $ref: '#/components/parameters/ClaimId' }]
+      responses:
+        '200':
+          description: Claim
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClaimResponse' }
+        '404': { description: Claim not found }
+  /api/v1/insurance/claims/{claim_id}/adjudicate:
+    post:
+      summary: Manually approve a claim for an approved amount
+      operationId: adjudicate_claim
+      parameters: [{ $ref: '#/components/parameters/ClaimId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdjudicateRequest' }
+      responses:
+        '200':
+          description: Approved claim
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClaimResponse' }
+        '409': { description: "Claim has already been paid" }
+  /api/v1/insurance/claims/{claim_id}/reject:
+    post:
+      summary: Reject a claim with a reason
+      operationId: reject_claim
+      parameters: [{ $ref: '#/components/parameters/ClaimId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RejectRequest' }
+      responses:
+        '200':
+          description: Rejected claim
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClaimResponse' }
+        '409': { description: "Claim has already been paid" }
+  /api/v1/insurance/claims/{claim_id}/pay:
+    post:
+      summary: Mark an approved claim as paid (idempotent no-op if already paid)
+      operationId: pay_claim
+      parameters: [{ $ref: '#/components/parameters/ClaimId' }]
+      responses:
+        '200':
+          description: Paid claim
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ClaimResponse' }
+        '404': { description: Claim not found }
+        '409': { description: "Claim is not approved and cannot be paid" }
+components:
+  parameters:
+    ClaimId:
+      name: claim_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    ClaimStatus:
+      type: string
+      enum: [SUBMITTED, APPROVED, REJECTED, PAID]
+    EligibilityRequest:
+      type: object
+      required: [policy_number, member_id]
+      properties:
+        policy_number: { type: string, maxLength: 64 }
+        member_id: { type: string, maxLength: 64 }
+    EligibilityResponse:
+      type: object
+      properties:
+        eligible: { type: boolean }
+        coverage_percent: { type: integer }
+        reason: { type: string }
+    PolicyUpsertRequest:
+      type: object
+      required: [policy_number, provider, member_id, coverage_percent, valid_from, valid_to]
+      properties:
+        policy_number: { type: string, maxLength: 64 }
+        provider: { type: string, maxLength: 128 }
+        member_id: { type: string, maxLength: 64 }
+        patient_id: { type: string, maxLength: 64, nullable: true }
+        coverage_percent: { type: integer, minimum: 0, maximum: 100 }
+        valid_from: { type: string, format: date-time }
+        valid_to: { type: string, format: date-time, description: "Must be after valid_from" }
+        active: { type: boolean, default: true }
+    PolicyResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        policy_number: { type: string }
+        provider: { type: string }
+        member_id: { type: string }
+        patient_id: { type: string, nullable: true }
+        coverage_percent: { type: integer }
+        valid_from: { type: string, format: date-time }
+        valid_to: { type: string, format: date-time }
+        active: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ClaimCreateRequest:
+      type: object
+      required: [policy_number, patient_id, amount]
+      properties:
+        policy_number: { type: string, maxLength: 64 }
+        patient_id: { type: string, maxLength: 64 }
+        encounter_id: { type: string, maxLength: 64, nullable: true }
+        invoice_id: { type: string, maxLength: 64, nullable: true }
+        amount: { type: number, format: double, exclusiveMinimum: 0 }
+    ClaimResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        claim_number: { type: string }
+        policy_number: { type: string }
+        patient_id: { type: string }
+        encounter_id: { type: string, nullable: true }
+        invoice_id: { type: string, nullable: true }
+        amount: { type: number, format: double }
+        status: { type: string }
+        approved_amount: { type: number, format: double, nullable: true }
+        rejection_reason: { type: string, nullable: true }
+        notes: { type: string, nullable: true }
+        submitted_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    AdjudicateRequest:
+      type: object
+      required: [approved_amount]
+      properties:
+        approved_amount: { type: number, format: double, minimum: 0 }
+        notes: { type: string, maxLength: 2000, nullable: true }
+    RejectRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 2000 }

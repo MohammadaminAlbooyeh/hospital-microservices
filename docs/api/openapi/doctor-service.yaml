@@ -1,0 +1,220 @@
+openapi: 3.0.3
+info:
+  title: doctor-service
+  description: >
+    Doctor profiles, specialities, weekly schedules, leave, and daily
+    capacity.
+  version: "1.0.0"
+servers:
+  - url: http://localhost:8084
+  - url: http://localhost:8080
+    description: Via api-gateway (/api/v1/doctors/**)
+paths:
+  /api/v1/doctors:
+    post:
+      summary: Register a new doctor
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DoctorRequest' }
+      responses:
+        '201':
+          description: Doctor registered
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DoctorResponse' }
+    get:
+      summary: List doctors, optionally filtered by speciality
+      operationId: list
+      parameters:
+        - name: speciality
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Matching doctors
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/DoctorResponse' }
+  /api/v1/doctors/{id}:
+    get:
+      summary: Get a doctor by ID
+      operationId: get
+      parameters: [{ $ref: '#/components/parameters/DoctorId' }]
+      responses:
+        '200':
+          description: Doctor
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DoctorResponse' }
+        '404': { description: Doctor not found }
+    put:
+      summary: Update a doctor's profile
+      operationId: update
+      parameters: [{ $ref: '#/components/parameters/DoctorId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DoctorRequest' }
+      responses:
+        '200':
+          description: Updated doctor
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DoctorResponse' }
+    delete:
+      summary: Deactivate/delete a doctor
+      operationId: delete
+      parameters: [{ $ref: '#/components/parameters/DoctorId' }]
+      responses:
+        '204': { description: Deleted }
+  /api/v1/doctors/{id}/schedule:
+    post:
+      summary: Add a weekly schedule entry
+      operationId: addSchedule
+      parameters: [{ $ref: '#/components/parameters/DoctorId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ScheduleRequest' }
+      responses:
+        '201':
+          description: Schedule entry created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScheduleResponse' }
+    get:
+      summary: Get a doctor's weekly schedule
+      operationId: getSchedule
+      parameters: [{ $ref: '#/components/parameters/DoctorId' }]
+      responses:
+        '200':
+          description: Schedule entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ScheduleResponse' }
+  /api/v1/doctors/{id}/leave:
+    post:
+      summary: Record a leave period for a doctor
+      operationId: addLeave
+      parameters: [{ $ref: '#/components/parameters/DoctorId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LeaveRequest' }
+      responses:
+        '201':
+          description: Leave recorded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LeaveResponse' }
+    get:
+      summary: Get a doctor's recorded leave periods
+      operationId: getLeave
+      parameters: [{ $ref: '#/components/parameters/DoctorId' }]
+      responses:
+        '200':
+          description: Leave periods
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/LeaveResponse' }
+  /api/v1/doctors/{id}/availability:
+    get:
+      summary: Get a doctor's availability for a given date
+      operationId: availability
+      parameters:
+        - { $ref: '#/components/parameters/DoctorId' }
+        - name: date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Availability summary (shape depends on schedule/leave/capacity for that date)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+components:
+  parameters:
+    DoctorId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    DayOfWeekEnum:
+      type: string
+      enum: [MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY, SATURDAY, SUNDAY]
+    DoctorRequest:
+      type: object
+      required: [firstName, lastName, speciality, email, phone, licenseNumber]
+      properties:
+        firstName: { type: string }
+        lastName: { type: string }
+        speciality: { type: string }
+        email: { type: string, format: email }
+        phone: { type: string }
+        licenseNumber: { type: string }
+        departmentId: { type: string, format: uuid, nullable: true }
+        dailyCapacity: { type: integer, nullable: true }
+    DoctorResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        firstName: { type: string }
+        lastName: { type: string }
+        speciality: { type: string }
+        email: { type: string, format: email }
+        phone: { type: string }
+        licenseNumber: { type: string }
+        departmentId: { type: string, format: uuid, nullable: true }
+        dailyCapacity: { type: integer, nullable: true }
+        active: { type: boolean }
+        version: { type: integer, format: int64 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ScheduleRequest:
+      type: object
+      required: [dayOfWeek, startTime, endTime]
+      properties:
+        dayOfWeek: { $ref: '#/components/schemas/DayOfWeekEnum' }
+        startTime: { type: string, format: time }
+        endTime: { type: string, format: time }
+        maxAppointments: { type: integer, nullable: true }
+    ScheduleResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        doctorId: { type: string, format: uuid }
+        dayOfWeek: { $ref: '#/components/schemas/DayOfWeekEnum' }
+        startTime: { type: string, format: time }
+        endTime: { type: string, format: time }
+        maxAppointments: { type: integer, nullable: true }
+    LeaveRequest:
+      type: object
+      required: [startDate, endDate]
+      properties:
+        startDate: { type: string, format: date }
+        endDate: { type: string, format: date }
+        reason: { type: string, nullable: true }
+    LeaveResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        doctorId: { type: string, format: uuid }
+        startDate: { type: string, format: date }
+        endDate: { type: string, format: date }
+        reason: { type: string, nullable: true }

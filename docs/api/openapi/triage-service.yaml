@@ -1,0 +1,101 @@
+openapi: 3.0.3
+info:
+  title: triage-service
+  description: >
+    Emergency triage. Computes ESI level 1-5 from vitals and chief complaint
+    using rules and an optional ML model.
+  version: "1.0.0"
+servers:
+  - url: http://localhost:8001
+  - url: http://localhost:8080
+    description: Via api-gateway (/api/v1/triage/**)
+paths:
+  /api/v1/triage/assess:
+    post:
+      summary: Run a triage assessment and persist the record
+      operationId: assess_triage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TriageRequest' }
+      responses:
+        '201':
+          description: Triage assessment recorded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TriageResponse' }
+  /api/v1/triage/{record_id}:
+    get:
+      summary: Get a triage record by ID
+      operationId: get_triage
+      parameters:
+        - name: record_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Triage record
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TriageResponse' }
+        '404': { description: Triage record not found }
+  /api/v1/triage/patients/{patient_id}:
+    get:
+      summary: List triage records for a patient, most recent first
+      operationId: list_patient_triage
+      parameters:
+        - name: patient_id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Triage records
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/TriageResponse' }
+components:
+  schemas:
+    Vitals:
+      type: object
+      properties:
+        temperature_c: { type: number, format: float, minimum: 25, maximum: 45, nullable: true }
+        heart_rate: { type: integer, minimum: 0, maximum: 300, nullable: true }
+        systolic_bp: { type: integer, minimum: 0, maximum: 300, nullable: true }
+        diastolic_bp: { type: integer, minimum: 0, maximum: 200, nullable: true }
+        respiratory_rate: { type: integer, minimum: 0, maximum: 100, nullable: true }
+        spo2: { type: integer, minimum: 0, maximum: 100, nullable: true }
+        pain_score: { type: integer, minimum: 0, maximum: 10, default: 0 }
+        consciousness:
+          type: string
+          enum: [alert, voice, pain, unresponsive]
+          default: alert
+    TriageRequest:
+      type: object
+      required: [patient_id, chief_complaint, age, vitals]
+      properties:
+        patient_id: { type: string, maxLength: 64 }
+        encounter_id: { type: string, maxLength: 64, nullable: true }
+        chief_complaint: { type: string, minLength: 3, maxLength: 1000 }
+        age: { type: integer, minimum: 0, maximum: 130 }
+        pregnancy: { type: boolean, default: false }
+        vitals: { $ref: '#/components/schemas/Vitals' }
+    TriageResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        patient_id: { type: string }
+        encounter_id: { type: string, nullable: true }
+        chief_complaint: { type: string }
+        esi_level: { type: integer, minimum: 1, maximum: 5 }
+        priority: { type: string }
+        recommended_action: { type: string }
+        rationale:
+          type: array
+          items: { type: string }
+        model_used: { type: string }
+        created_at: { type: string, format: date-time, nullable: true }

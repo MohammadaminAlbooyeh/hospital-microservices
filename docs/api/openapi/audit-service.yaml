@@ -1,0 +1,55 @@
+openapi: 3.0.3
+info:
+  title: audit-service
+  description: >
+    Immutable access log over all patient data — who read what, when
+    (HIPAA/GDPR requirement). Current implementation is a dev skeleton: it
+    buffers events in memory; durable, append-only persistence and Kafka
+    ingestion (consuming all 8 domain events as the cross-cutting watcher)
+    are handled by migrations/consumers not yet wired to this router.
+  version: "1.0.0"
+servers:
+  - url: http://localhost:8007
+  - url: http://localhost:8080
+    description: Via api-gateway (/api/v1/audit/**)
+paths:
+  /api/v1/audit/events:
+    post:
+      summary: Record an audit event (dev skeleton — in-memory buffer)
+      operationId: record_event
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AuditEventIn' }
+      responses:
+        '200':
+          description: Recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: "recorded" }
+    get:
+      summary: List recorded audit events (dev skeleton — in-memory buffer)
+      operationId: list_events
+      responses:
+        '200':
+          description: All buffered events (not paginated; not persisted across restarts)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/AuditEventIn' }
+components:
+  schemas:
+    AuditEventIn:
+      type: object
+      required: [actor, action, resource_type, resource_id]
+      properties:
+        actor: { type: string, minLength: 1 }
+        action: { type: string, minLength: 1 }
+        resource_type: { type: string, minLength: 1 }
+        resource_id: { type: string, minLength: 1 }
+        outcome: { type: string, default: "SUCCESS" }

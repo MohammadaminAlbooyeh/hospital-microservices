@@ -1,0 +1,47 @@
+openapi: 3.0.3
+info:
+  title: ml-prediction-service
+  description: >
+    No-show prediction, length-of-stay estimation, optimal slot suggestion.
+    Training scripts exist under app/training (train_noshow.py,
+    feature_store.py); the runtime endpoint below is a safe
+    placeholder/heuristic pending a trained model being loaded.
+  version: "1.0.0"
+servers:
+  - url: http://localhost:8005
+  - url: http://localhost:8080
+    description: Via api-gateway (/api/v1/predictions/**)
+paths:
+  /api/v1/predictions/no-show:
+    post:
+      summary: Predict the no-show risk for an appointment (placeholder heuristic)
+      operationId: predict_no_show
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NoShowRequest' }
+      responses:
+        '200':
+          description: Risk score
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NoShowResponse' }
+components:
+  schemas:
+    NoShowRequest:
+      type: object
+      required: [age, lead_days]
+      properties:
+        age: { type: integer, minimum: 0, maximum: 130 }
+        lead_days:
+          type: integer
+          minimum: 0
+          maximum: 3650
+          description: Days between booking and the appointment slot
+        previous_no_shows: { type: integer, minimum: 0, maximum: 100, default: 0 }
+    NoShowResponse:
+      type: object
+      properties:
+        model: { type: string, example: "noshow-placeholder" }
+        risk: { type: number, format: float, minimum: 0, maximum: 0.99 }

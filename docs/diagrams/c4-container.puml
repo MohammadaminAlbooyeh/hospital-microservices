@@ -1,0 +1,149 @@
+@startuml c4-container
+!include <C4/C4_Container>
+
+title Container Diagram — Hospital Platform
+
+Person(patient, "Patient")
+Person(staff, "Clinical / billing staff")
+Person(admin, "Administrator")
+
+System_Boundary(frontend, "Client layer (React/TS)") {
+    Container(patientPortal, "patient-portal", "React", "Patient-facing: register, book, view results/invoices, pay")
+    Container(staffConsole, "staff-console", "React", "Doctors, nurses, receptionists, billing staff")
+    Container(adminDashboard, "admin-dashboard", "React", "User/role admin, analytics, audit trails")
+}
+
+Container(gateway, "api-gateway", "Java, Spring Cloud Gateway", "Single entry point: routing, JWT validation, rate limiting, CORS, correlation ID")
+
+System_Boundary(infra, "A. Infrastructure & Security (Java)") {
+    Container(auth, "auth-service", "Java + Keycloak", "Registration, login, OTP, refresh tokens, RBAC")
+    Container(configDiscovery, "config-discovery-service", "Java, Spring Cloud Config + Eureka", "Centralised config and service registry")
+}
+
+System_Boundary(patientCore, "B. Patient Core Domain") {
+    Container(patientSvc, "patient-service", "Java", "Demographics, insurance policy, allergies")
+    Container(appointmentSvc, "appointment-service", "Java", "Slots, booking, optimistic locking")
+    Container(doctorSvc, "doctor-service", "Java", "Doctor profiles, schedules, capacity")
+    Container(departmentSvc, "department-service", "Java", "Departments, rooms, beds, equipment")
+    Container(triageSvc, "triage-service", "Python, FastAPI", "ESI level from vitals/chief complaint (rules + ML)")
+}
+
+System_Boundary(clinical, "C. Clinical Workflow (Java)") {
+    Container(encounterSvc, "encounter-service", "Java", "Visit entity; explicit state machine")
+    Container(ehrSvc, "ehr-service", "Java", "Append-only, versioned clinical notes")
+    Container(prescriptionSvc, "prescription-service", "Java", "Prescribing, dosage, interaction checks")
+    Container(labSvc, "lab-service", "Java", "Lab orders, specimens, results, imaging referral")
+    Container(pharmacySvc, "pharmacy-inventory-service", "Java", "Stock, dispensing, low-stock/expiry alerts")
+}
+
+System_Boundary(financial, "D. Financial (Java + Python)") {
+    Container(billingSvc, "billing-service", "Java", "Invoice assembly, insurer/patient split")
+    Container(paymentSvc, "payment-service", "Java", "Gateway integration, refunds, idempotency")
+    Container(insuranceSvc, "insurance-service", "Python, FastAPI", "Eligibility, claim submission/adjudication")
+}
+
+System_Boundary(intelligence, "E. Intelligence & Supporting (Python)") {
+    Container(notificationSvc, "notification-service", "Python, FastAPI + Celery", "Email/SMS/push, Kafka consumer")
+    Container(analyticsSvc, "analytics-service", "Python, pandas", "Wait time, no-show, occupancy, revenue")
+    Container(mlSvc, "ml-prediction-service", "Python, scikit-learn", "No-show, length-of-stay, slot suggestion")
+    Container(documentSvc, "document-service", "Python, FastAPI", "PDF generation, OCR")
+    Container(auditSvc, "audit-service", "Python, FastAPI", "Immutable access log (cross-cutting)")
+}
+
+Container_Queue(kafka, "Kafka", "Event backbone", "PatientRegistered, AppointmentBooked/Cancelled, EncounterCompleted, LabResultReady, InvoiceIssued, PaymentCompleted/Failed — Avro schemas, transactional outbox + Debezium")
+
+ContainerDb(pgPatient, "hospital_patient", "PostgreSQL", "patient-service")
+ContainerDb(pgAppointment, "hospital_appointment", "PostgreSQL", "appointment-service")
+ContainerDb(pgDoctor, "hospital_doctor", "PostgreSQL", "doctor-service")
+ContainerDb(pgDepartment, "hospital_department", "PostgreSQL", "department-service")
+ContainerDb(pgTriage, "hospital_triage", "PostgreSQL", "triage-service")
+ContainerDb(pgEncounter, "hospital_encounter", "PostgreSQL", "encounter-service")
+ContainerDb(mongoEhr, "hospital_ehr", "MongoDB", "ehr-service")
+ContainerDb(pgPrescription, "hospital_prescription", "PostgreSQL", "prescription-service")
+ContainerDb(pgLab, "hospital_lab", "PostgreSQL", "lab-service")
+ContainerDb(pgPharmacy, "hospital_pharmacy", "PostgreSQL", "pharmacy-inventory-service")
+ContainerDb(pgBilling, "hospital_billing", "PostgreSQL", "billing-service")
+ContainerDb(pgPayment, "hospital_payment", "PostgreSQL", "payment-service")
+ContainerDb(pgInsurance, "hospital_insurance", "PostgreSQL", "insurance-service")
+ContainerDb(pgNotification, "hospital_notification", "PostgreSQL", "notification-service")
+ContainerDb(tsAnalytics, "hospital_analytics", "TimescaleDB", "analytics-service")
+ContainerDb(pgMl, "hospital_ml", "PostgreSQL", "ml-prediction-service")
+ContainerDb(pgDocument, "hospital_document + object storage", "PostgreSQL + S3/MinIO", "document-service")
+ContainerDb(pgAudit, "hospital_audit", "PostgreSQL", "audit-service")
+ContainerDb(redis, "Redis", "Redis", "api-gateway rate limits; Celery broker")
+
+System_Ext(smsEmail, "SMS / Email Gateway")
+System_Ext(paymentGateway, "Payment Gateway")
+System_Ext(insuranceClearinghouse, "Insurance Providers")
+
+Rel(patient, patientPortal, "HTTPS")
+Rel(staff, staffConsole, "HTTPS")
+Rel(admin, adminDashboard, "HTTPS")
+Rel(patientPortal, gateway, "HTTPS")
+Rel(staffConsole, gateway, "HTTPS")
+Rel(adminDashboard, gateway, "HTTPS")
+
+Rel(gateway, auth, "JWT validation", "REST")
+Rel(gateway, patientSvc, "REST")
+Rel(gateway, appointmentSvc, "REST")
+Rel(gateway, doctorSvc, "REST")
+Rel(gateway, departmentSvc, "REST")
+Rel(gateway, encounterSvc, "REST")
+Rel(gateway, ehrSvc, "REST")
+Rel(gateway, prescriptionSvc, "REST")
+Rel(gateway, labSvc, "REST")
+Rel(gateway, pharmacySvc, "REST")
+Rel(gateway, billingSvc, "REST")
+Rel(gateway, paymentSvc, "REST")
+Rel(gateway, triageSvc, "REST")
+Rel(gateway, insuranceSvc, "REST")
+Rel(gateway, notificationSvc, "REST")
+Rel(gateway, analyticsSvc, "REST")
+Rel(gateway, mlSvc, "REST")
+Rel(gateway, documentSvc, "REST")
+Rel(gateway, auditSvc, "REST")
+Rel(gateway, configDiscovery, "Eureka lookup")
+
+Rel(patientSvc, pgPatient, "JDBC")
+Rel(appointmentSvc, pgAppointment, "JDBC")
+Rel(doctorSvc, pgDoctor, "JDBC")
+Rel(departmentSvc, pgDepartment, "JDBC")
+Rel(triageSvc, pgTriage, "SQL/async")
+Rel(encounterSvc, pgEncounter, "JDBC")
+Rel(ehrSvc, mongoEhr, "Mongo driver")
+Rel(prescriptionSvc, pgPrescription, "JDBC")
+Rel(labSvc, pgLab, "JDBC")
+Rel(pharmacySvc, pgPharmacy, "JDBC")
+Rel(billingSvc, pgBilling, "JDBC")
+Rel(paymentSvc, pgPayment, "JDBC")
+Rel(insuranceSvc, pgInsurance, "SQL/async")
+Rel(notificationSvc, pgNotification, "SQL/async")
+Rel(analyticsSvc, tsAnalytics, "SQL/async")
+Rel(mlSvc, pgMl, "SQL/async")
+Rel(documentSvc, pgDocument, "SQL/async")
+Rel(auditSvc, pgAudit, "SQL/async")
+Rel(gateway, redis, "Rate-limit counters")
+Rel(notificationSvc, redis, "Celery broker")
+
+Rel(patientSvc, kafka, "PatientRegistered", "produces")
+Rel(appointmentSvc, kafka, "AppointmentBooked/Cancelled", "produces")
+Rel(encounterSvc, kafka, "EncounterCompleted", "produces")
+Rel(labSvc, kafka, "LabResultReady", "produces")
+Rel(billingSvc, kafka, "InvoiceIssued", "produces")
+Rel(paymentSvc, kafka, "PaymentCompleted/Failed", "produces")
+
+Rel(kafka, notificationSvc, "consumes all 8 event types")
+Rel(kafka, analyticsSvc, "consumes")
+Rel(kafka, mlSvc, "consumes AppointmentBooked/Cancelled")
+Rel(kafka, auditSvc, "consumes everything (cross-cutting)")
+Rel(kafka, insuranceSvc, "consumes PatientRegistered, EncounterCompleted, InvoiceIssued")
+Rel(kafka, billingSvc, "consumes EncounterCompleted, PaymentCompleted/Failed")
+Rel(kafka, pharmacySvc, "consumes PaymentFailed")
+Rel(kafka, documentSvc, "consumes InvoiceIssued, PaymentCompleted")
+
+Rel(notificationSvc, smsEmail, "Sends SMS/email", "HTTPS/API")
+Rel(paymentSvc, paymentGateway, "Captures/refunds", "HTTPS/API")
+Rel(insuranceSvc, insuranceClearinghouse, "Eligibility/claims", "HTTPS/API")
+
+SHOW_LEGEND()
+@enduml

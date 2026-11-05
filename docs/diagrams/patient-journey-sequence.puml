@@ -1,0 +1,132 @@
+@startuml patient-journey-sequence
+title The Patient Journey — Registration through Payment (with Kafka events)
+
+actor Patient
+participant "patient-portal" as Portal
+participant "api-gateway" as Gateway
+participant "auth-service" as Auth
+participant "patient-service" as PatientSvc
+participant "doctor-service" as DoctorSvc
+participant "appointment-service" as ApptSvc
+participant "notification-service" as Notify
+participant "ml-prediction-service" as ML
+participant "encounter-service" as Encounter
+participant "insurance-service" as Insurance
+participant "triage-service" as Triage
+participant "ehr-service" as EHR
+participant "prescription-service" as Rx
+participant "lab-service" as Lab
+participant "pharmacy-inventory-service" as Pharmacy
+participant "billing-service" as Billing
+participant "payment-service" as Payment
+participant "document-service" as Document
+queue "Kafka" as Kafka
+participant "audit-service" as Audit
+
+note over Kafka, Audit
+  audit-service consumes every event throughout the journey (not drawn per-step for clarity)
+end note
+
+== 1. Registration ==
+Patient -> Portal: Fill registration form
+Portal -> Gateway: POST /api/v1/patients
+Gateway -> Auth: Validate / issue token
+Gateway -> PatientSvc: POST /api/v1/patients
+PatientSvc -> PatientSvc: Create patient (local tx + outbox)
+PatientSvc -> Kafka: publish PatientRegistered
+Kafka -> Notify: consume PatientRegistered
+Notify -> Patient: Welcome SMS/email
+
+== 2. Browse doctors and available slots ==
+Patient -> Portal: Search doctors / specialities
+Portal -> Gateway: GET /api/v1/doctors, GET /api/v1/slots
+Gateway -> DoctorSvc: GET /api/v1/doctors
+Gateway -> ApptSvc: GET /api/v1/slots?doctorId=...
+
+== 3. Book an appointment ==
+Patient -> Portal: Select slot
+Portal -> Gateway: POST /api/v1/appointments
+Gateway -> ApptSvc: POST /api/v1/appointments
+ApptSvc -> ApptSvc: Optimistic-locked UPDATE slot\n(version check, 409 on conflict)
+ApptSvc -> Kafka: publish AppointmentBooked
+Kafka -> Notify: consume AppointmentBooked
+Notify -> Patient: SMS confirmation
+Kafka -> ML: consume AppointmentBooked
+ML -> ML: Compute no-show risk score
+
+== 4. Reminder, 24h before ==
+Notify -> Notify: Scheduled job (Celery)
+Notify -> Patient: Reminder SMS/email
+
+== 5. Arrival and check-in ==
+Patient -> Portal: Check in
+Portal -> Gateway: POST /api/v1/encounters
+Gateway -> Encounter: POST /api/v1/encounters
+Encounter -> Encounter: Create encounter, state = CHECKED_IN
+Encounter -> Insurance: GET eligibility (sync REST)
+Insurance --> Encounter: Eligibility result
+Encounter -> Triage: POST /api/v1/triage (if emergency)
+Triage --> Encounter: ESI level 1-5
+
+== 6. Consultation ==
+Encounter -> Encounter: transition -> IN_CONSULTATION
+Encounter -> EHR: POST /api/v1/ehr (clinical note, ICD-10)
+Encounter -> Rx: POST /api/v1/prescriptions
+Encounter -> Lab: POST /api/v1/labs (lab order placed)
+
+== 7. Laboratory ==
+Lab -> Lab: Record result, verify, release
+Lab -> Kafka: publish LabResultReady
+Kafka -> Notify: consume LabResultReady
+Notify -> Patient: Result-ready notice
+Kafka -> Encounter: consume LabResultReady (clinical lifecycle)
+Kafka -> EHR: consume LabResultReady (attach to record)
+Kafka -> Billing: consume LabResultReady (charge line)
+
+== 8. Pharmacy ==
+Rx -> Pharmacy: Dispense request
+Pharmacy -> Pharmacy: Decrement stock on dispense\n(reservation -> dispensed)
+
+== 9. Discharge ==
+Encounter -> Encounter: transition -> READY_FOR_DISCHARGE -> COMPLETED
+Encounter -> Kafka: publish EncounterCompleted
+
+== 10. Invoicing ==
+Kafka -> Billing: consume EncounterCompleted
+Billing -> Billing: Assemble invoice\n(consultation + labs + drugs + bed)
+Billing -> Insurance: Request split (sync REST)
+Insurance --> Billing: Insurer share / patient share
+Billing -> Insurance: Submit claim
+Billing -> Kafka: publish InvoiceIssued
+Kafka -> Notify: consume InvoiceIssued
+Notify -> Patient: Invoice notice
+Kafka -> Document: consume InvoiceIssued
+Document -> Document: Render invoice PDF
+
+== 11. Payment ==
+Patient -> Portal: Pay invoice
+Portal -> Gateway: POST /api/v1/payments (Idempotency-Key)
+Gateway -> Payment: POST /api/v1/payments
+Payment -> Payment: Create PaymentAttempt (PROCESSING)
+
+alt success
+  Payment -> Payment: Gateway confirms capture
+  Payment -> Kafka: publish PaymentCompleted
+  Kafka -> Billing: consume PaymentCompleted\n(invoice -> PAID / PARTIALLY_PAID)
+  Kafka -> Document: consume PaymentCompleted
+  Document -> Document: Generate PDF receipt
+  Kafka -> Notify: consume PaymentCompleted
+  Notify -> Patient: Payment confirmation
+else failure (saga compensation)
+  Payment -> Kafka: publish PaymentFailed
+  Kafka -> Billing: consume PaymentFailed\n(invoice reverts to PENDING)
+  Kafka -> Pharmacy: consume PaymentFailed\n(release reservation or write-off/return-to-stock)
+  Kafka -> Notify: consume PaymentFailed
+  Notify -> Patient: Payment-failure notice + retry link
+end
+
+note over Kafka, Audit
+  Throughout every step: audit-service records every access to patient data
+end note
+
+@enduml

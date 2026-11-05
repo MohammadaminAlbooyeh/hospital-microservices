@@ -1,0 +1,35 @@
+@startuml c4-context
+!include <C4/C4_Context>
+
+title System Context — Hospital Platform
+
+Person(patient, "Patient", "Registers, books appointments, views results and invoices, pays online")
+Person(doctor, "Doctor", "Opens encounters, writes clinical notes, orders labs, prescribes, discharges")
+Person(nurse, "Nurse", "Checks in patients, records triage/vitals, supports medication administration")
+Person(receptionist, "Receptionist", "Registers patients, books/reschedules appointments, manages demographics")
+Person(billingStaff, "Billing staff", "Reviews invoices, insurance claims, payments, refunds")
+Person(admin, "Administrator", "Manages users/roles, views analytics, inspects audit trails")
+
+System_Boundary(platform, "Hospital Platform") {
+    System(hospitalSystem, "Hospital Information System", "21 Java/Spring Boot + Python/FastAPI microservices covering the outpatient journey: registration, booking, check-in, triage, consultation, labs, pharmacy, discharge, invoicing, insurance adjudication, and payment")
+}
+
+System_Ext(smsEmail, "SMS / Email Gateway", "Delivers appointment reminders, lab-result alerts, payment notices")
+System_Ext(paymentGateway, "Payment Gateway", "Card capture, instalments, refunds")
+System_Ext(insuranceClearinghouse, "Insurance Providers / Clearinghouse", "Eligibility checks, claim submission, claim adjudication")
+System_Ext(pacs, "PACS", "Imaging referral and results for lab-service (imaging)")
+
+Rel(patient, hospitalSystem, "Registers, books, views results/invoices, pays", "HTTPS")
+Rel(doctor, hospitalSystem, "Clinical workflow", "HTTPS")
+Rel(nurse, hospitalSystem, "Check-in, triage, vitals", "HTTPS")
+Rel(receptionist, hospitalSystem, "Registration, scheduling", "HTTPS")
+Rel(billingStaff, hospitalSystem, "Invoices, claims, payments", "HTTPS")
+Rel(admin, hospitalSystem, "User/role admin, analytics, audit", "HTTPS")
+
+Rel(hospitalSystem, smsEmail, "Sends SMS/email notifications", "HTTPS/API")
+Rel(hospitalSystem, paymentGateway, "Captures payments, issues refunds", "HTTPS/API")
+Rel(hospitalSystem, insuranceClearinghouse, "Eligibility checks, claim submission/status", "HTTPS/API")
+Rel(hospitalSystem, pacs, "Imaging referral and results", "HL7/DICOM (phase two)")
+
+SHOW_LEGEND()
+@enduml
