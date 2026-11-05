@@ -1,0 +1,94 @@
+include:
+  - docker-compose.infra.yml
+
+services:
+  config-discovery-service:
+    build:
+      context: .
+      dockerfile: services-java/config-discovery-service/Dockerfile
+    ports: ["8888:8888"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: services-java/api-gateway/Dockerfile
+    ports: ["8080:8080"]
+    environment:
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://config-discovery-service:8888/eureka
+      SPRING_DATA_REDIS_HOST: redis
+    depends_on:
+      - config-discovery-service
+      - redis
+
+  auth-service:
+    build:
+      context: .
+      dockerfile: services-java/auth-service/Dockerfile
+    ports: ["8081:8081"]
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/hospital_auth
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://config-discovery-service:8888/eureka
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      - config-discovery-service
+
+  patient-service:
+    build:
+      context: .
+      dockerfile: services-java/patient-service/Dockerfile
+    ports: ["8082:8082"]
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/hospital_patient
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://config-discovery-service:8888/eureka
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      - config-discovery-service
+
+  appointment-service:
+    build:
+      context: .
+      dockerfile: services-java/appointment-service/Dockerfile
+    ports: ["8083:8083"]
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/hospital_appointment
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://config-discovery-service:8888/eureka
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      - config-discovery-service
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: services-python/notification-service/Dockerfile
+    ports: ["8002:8002"]
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      DATABASE_URL: postgresql+psycopg://hospital:hospital@postgres:5432/hospital_notification
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  patient-portal:
+    build:
+      context: .
+      dockerfile: frontend/patient-portal/Dockerfile
+    ports: ["3000:80"]
+    depends_on:
+      - api-gateway
