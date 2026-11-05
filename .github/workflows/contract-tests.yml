@@ -1,23 +1,68 @@
-name: contract-tests
+name: Contract Tests
+
 on:
   push:
-    paths: ['contracts/**', '.github/workflows/contract-tests.yml']
+    branches: [main]
+    paths:
+      - "contracts/**"
+      - ".github/workflows/contract-tests.yml"
   pull_request:
-    paths: ['contracts/**']
+    paths:
+      - "contracts/**"
+      - ".github/workflows/contract-tests.yml"
+
 jobs:
-  contracts:
+  codegen:
+    name: Regenerate code from contracts
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
         with:
-          python-version: '3.12'
-      - name: Validate contract files exist
+          java-version: "21"
+          distribution: temurin
+          cache: maven
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Install datamodel-code-generator
+        run: python3 -m pip install "datamodel-code-generator[http]"
+
+      - name: Run contracts/codegen.sh
+        run: ./contracts/codegen.sh
+
+      - name: Fail if generated sources changed and were not committed
         run: |
-          test -d contracts/avro
-          test -d contracts/proto
-          find contracts -name '*.avsc' -o -name '*.proto' | grep .
-      - name: Run codegen script (best effort)
-        run: |
-          chmod +x contracts/codegen.sh
-          ./contracts/codegen.sh || echo "codegen skipped due to missing local tools"
+          git diff --exit-code -- \
+            services-java/shared-kernel/src/main/java \
+            services-python/shared/hospital_shared/events/generated.py
+
+  contract-tests:
+    name: Patient-service contract tests
+    runs-on: ubuntu-latest
+    needs: codegen
+    defaults:
+      run:
+        working-directory: services-java
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: temurin
+          cache: maven
+
+      - name: Run patient-service contract tests
+        run: mvn -B -pl patient-service -am test -Dtest=com.hospital.patient.contract.**

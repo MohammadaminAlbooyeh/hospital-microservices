@@ -1,14 +1,143 @@
-name: deploy
+name: Deploy
+
+# NOTE: This workflow is a template. Before it can deploy for real, the
+# following must be configured in repository settings:
+#   - A GHCR_TOKEN secret (or equivalent) with permission to push to the
+#     container registry referenced below.
+#   - Cluster credentials for kubectl (e.g. a KUBE_CONFIG secret, or an
+#     OIDC/cloud-provider login step) so `kubectl apply -k` can reach the
+#     target cluster.
+
 on:
-  workflow_dispatch:
   push:
-    tags: ['v*']
+    branches: [main]
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAMESPACE: ${{ github.repository }}
+
 jobs:
-  deploy:
+  build-and-push:
+    name: Build and push (${{ matrix.service }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          - context: services-java/api-gateway
+            image: api-gateway
+          - context: services-java/auth-service
+            image: auth-service
+          - context: services-java/config-discovery-service
+            image: config-discovery-service
+          - context: services-java/patient-service
+            image: patient-service
+          - context: services-java/appointment-service
+            image: appointment-service
+          - context: services-java/doctor-service
+            image: doctor-service
+          - context: services-java/department-service
+            image: department-service
+          - context: services-java/encounter-service
+            image: encounter-service
+          - context: services-java/ehr-service
+            image: ehr-service
+          - context: services-java/prescription-service
+            image: prescription-service
+          - context: services-java/lab-service
+            image: lab-service
+          - context: services-java/pharmacy-inventory-service
+            image: pharmacy-inventory-service
+          - context: services-java/billing-service
+            image: billing-service
+          - context: services-java/payment-service
+            image: payment-service
+          - context: services-python/analytics-service
+            image: analytics-service
+          - context: services-python/audit-service
+            image: audit-service
+          - context: services-python/document-service
+            image: document-service
+          - context: services-python/insurance-service
+            image: insurance-service
+          - context: services-python/ml-prediction-service
+            image: ml-prediction-service
+          - context: services-python/notification-service
+            image: notification-service
+          - context: services-python/triage-service
+            image: triage-service
     steps:
-      - uses: actions/checkout@v4
-      - name: Deploy placeholder
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.service.context }}
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.service.image }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/${{ matrix.service.image }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy-staging:
+    name: Deploy to staging
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main'
+    environment: staging
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      # NOTE: cluster credentials must be configured as repo/environment
+      # secrets (e.g. KUBE_CONFIG) before this step will actually succeed.
+      - name: Configure kubeconfig
         run: |
-          echo "Configure cluster credentials/secrets and deploy manifests or Helm chart here."
-          echo "Kubernetes manifests: infrastructure/k8s"
+          mkdir -p "$HOME/.kube"
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > "$HOME/.kube/config"
+
+      - name: Apply staging overlay
+        run: kubectl apply -k infrastructure/k8s/overlays/staging
+
+  deploy-prod:
+    name: Deploy to production
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: startsWith(github.ref, 'refs/tags/v')
+    environment: production
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      # NOTE: cluster credentials must be configured as repo/environment
+      # secrets (e.g. KUBE_CONFIG) before this step will actually succeed.
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p "$HOME/.kube"
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > "$HOME/.kube/config"
+
+      - name: Apply prod overlay
+        run: kubectl apply -k infrastructure/k8s/overlays/prod

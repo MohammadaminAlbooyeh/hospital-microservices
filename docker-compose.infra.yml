@@ -1,72 +1,153 @@
+name: hospital-infra
+
+# Infra-only stack: Kafka, Postgres, TimescaleDB, Redis, Keycloak, MailHog.
+# Usage: make infra-up  (== docker compose -f docker-compose.infra.yml up -d)
+
+networks:
+  hospital-net:
+    name: hospital-net
+    driver: bridge
+
+volumes:
+  postgres-data:
+  timescaledb-data:
+  redis-data:
+  kafka-data:
+  keycloak-data:
+
 services:
   postgres:
     image: postgres:16-alpine
+    container_name: hospital-postgres
+    restart: unless-stopped
+    env_file: .env
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-hospital}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hospital}
-      POSTGRES_DB: ${POSTGRES_DB:-hospital_platform}
+      POSTGRES_DB: postgres
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql/data
       - ./infrastructure/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hospital}"]
-      interval: 5s
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hospital} -d postgres"]
+      interval: 10s
       timeout: 5s
-      retries: 20
+      retries: 6
+      start_period: 10s
+    networks:
+      - hospital-net
+
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: hospital-timescaledb
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_USER: ${TIMESCALE_USER:-hospital}
+      POSTGRES_PASSWORD: ${TIMESCALE_PASSWORD:-hospital}
+      POSTGRES_DB: ${TIMESCALE_DB:-hospital_analytics}
+    ports:
+      - "${TIMESCALE_PORT:-5433}:5432"
+    volumes:
+      - timescaledb-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TIMESCALE_USER:-hospital} -d ${TIMESCALE_DB:-hospital_analytics}"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    networks:
+      - hospital-net
 
   redis:
     image: redis:7-alpine
+    container_name: hospital-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
-      - redis_data:/data
-
-  zookeeper:
-    image: confluentinc/cp-zookeeper:7.7.1
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
-    ports:
-      - "2181:2181"
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 5s
+    networks:
+      - hospital-net
 
   kafka:
-    image: confluentinc/cp-kafka:7.7.1
-    depends_on:
-      - zookeeper
+    image: bitnami/kafka:3.7
+    container_name: hospital-kafka
+    restart: unless-stopped
     ports:
       - "9092:9092"
     environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_CFG_NODE_ID: "0"
+      KAFKA_CFG_PROCESS_ROLES: controller,broker
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 0@kafka:9093
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_CFG_NUM_PARTITIONS: "12"
+      KAFKA_CFG_DEFAULT_REPLICATION_FACTOR: "1"
+      KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    volumes:
+      - kafka-data:/bitnami/kafka
     healthcheck:
-      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
-      interval: 10s
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list"]
+      interval: 15s
       timeout: 10s
-      retries: 20
+      retries: 10
+      start_period: 20s
+    networks:
+      - hospital-net
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.0
-    command: ["start-dev"]
+    image: quay.io/keycloak/keycloak:25.0
+    container_name: hospital-keycloak
+    restart: unless-stopped
+    command: ["start-dev", "--http-port=8080"]
+    env_file: .env
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
-      KC_HTTP_PORT: 8180
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "false"
     ports:
-      - "8180:8180"
+      - "${KEYCLOAK_PORT:-8180}:8080"
+    volumes:
+      - keycloak-data:/opt/keycloak/data
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - hospital-net
 
   mailhog:
     image: mailhog/mailhog:v1.0.1
+    container_name: hospital-mailhog
+    restart: unless-stopped
     ports:
-      - "1025:1025"
+      - "${SMTP_PORT:-1025}:1025"
       - "8025:8025"
-
-volumes:
-  postgres_data:
-  redis_data:
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/1025"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 5s
+    networks:
+      - hospital-net
