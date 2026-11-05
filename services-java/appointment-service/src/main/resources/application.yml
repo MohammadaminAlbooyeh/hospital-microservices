@@ -1,0 +1,25 @@
+spring:
+  application:
+    name: appointment-service
+  datasource:
+    url: jdbc:postgresql://localhost:5432/hospital_appointment
+    username: hospital
+    password: hospital
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+  kafka:
+    bootstrap-servers: localhost:9092
+server:
+  port: 8083
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8888/eureka
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
