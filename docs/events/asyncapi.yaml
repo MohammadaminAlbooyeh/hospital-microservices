@@ -1,0 +1,573 @@
+asyncapi: '2.6.0'
+id: 'urn:com.hospital:platform:events'
+defaultContentType: application/avro
+
+info:
+  title: Hospital Platform Domain Events
+  version: '1.0.0'
+  description: |
+    Kafka contracts for the hospital platform. Every domain event is published
+    to the single `hospital.events` topic using the Avro record referenced by
+    the message payload. JSON is not the wire format: producers serialise with
+    the Confluent Avro serializer and register the schema in the schema registry.
+
+    ## Envelope convention
+
+    The platform uses a thin, consistent envelope around every payload:
+
+    * **Kafka key** — the aggregate identifier (`patientId`, `appointmentId`,
+      `encounterId`, `labOrderId`, `invoiceId`, or `paymentId`). Ordering is
+      therefore guaranteed per aggregate within a partition.
+    * **Kafka headers** — `eventId`, `eventType`, `occurredAt` (ISO-8601),
+      `aggregateId`, `correlationId`, and `contentType`. These mirror
+      `com.hospital.shared.events.EventEnvelope` and
+      `hospital_shared.events.models.EventEnvelope`; the header set is defined
+      once in `components.schemas.EventHeaders`.
+    * **Payload** — the flat Avro record for the event type. Payload field names
+      are camelCase on the wire so Java producers and Pydantic consumers agree.
+
+    ## Delivery semantics
+
+    Delivery is at-least-once. Consumers must deduplicate on `eventId` (or on a
+    natural business key) inside the same database transaction that applies the
+    side effect. Producers write to the transactional outbox and a relay
+    publishes the row; see `docs/architecture.md` for the outbox design.
+
+    ## Owners
+
+    Producers and consumers listed on each message are the services documented
+    in section 2 of the README. The `hospital.events` topic is the only domain
+    topic in phase one; a `hospital.events.dlq` topic is used operationally for
+    messages that repeatedly fail validation or processing.
+
+  contact:
+    name: Hospital Platform Engineering
+    email: platform@hospital.local
+  license:
+    name: Proprietary
+
+servers:
+  kafka:
+    url: 'kafka:9092'
+    protocol: kafka
+    description: |
+      Local Docker Compose broker (single node, KRaft mode). Topic partitions
+      are reduced to 1 locally via `KAFKA_NUM_PARTITIONS`; production uses 12
+      partitions with replication factor 3.
+    bindings:
+      kafka:
+        schemaRegistryUrl: 'http://schema-registry:8081'
+        schemaRegistryVendor: confluent
+
+  kafka-secure:
+    url: '{brokerUrl}'
+    protocol: kafka-secure
+    description: |
+      Managed Kafka (MSK / Confluent Cloud) using TLS and SASL/SCRAM. The
+      schema registry is reached over HTTPS with service-account credentials.
+    variables:
+      brokerUrl:
+        default: 'b-1.hospital-kafka.example.com:9096'
+        description: Bootstrap broker advertised by the managed Kafka service.
+    security:
+      - saslScram: []
+    bindings:
+      kafka:
+        schemaRegistryUrl: 'https://schema-registry.hospital.example.com'
+        schemaRegistryVendor: confluent
+
+channels:
+  hospital.events:
+    description: |
+      Single log-compacted-by-time domain event stream. Key = aggregate ID.
+      All eight phase-one events share this topic so a consumer can join the
+      whole patient journey from one subscription. Services filter by
+      `eventType` in the header and ignore events they do not own.
+    bindings:
+      kafka:
+        topic: hospital.events
+        partitions: 12
+        replicas: 3
+        topicConfiguration:
+          cleanup.policy:
+            - delete
+          retention.ms: 604800000
+          max.message.bytes: 1048588
+    publish:
+      operationId: publishDomainEvent
+      summary: Publish a hospital domain event
+      description: |
+        Used by Java producers through the transactional outbox relay and by
+        Python producers through `hospital_shared.kafka.producer`. The producer
+        must set the Kafka key to the aggregate ID and propagate the current
+        correlation ID in the message header.
+      message:
+        oneOf:
+          - $ref: '#/components/messages/PatientRegistered'
+          - $ref: '#/components/messages/AppointmentBooked'
+          - $ref: '#/components/messages/AppointmentCancelled'
+          - $ref: '#/components/messages/EncounterCompleted'
+          - $ref: '#/components/messages/LabResultReady'
+          - $ref: '#/components/messages/InvoiceIssued'
+          - $ref: '#/components/messages/PaymentCompleted'
+          - $ref: '#/components/messages/PaymentFailed'
+    subscribe:
+      operationId: consumeDomainEvents
+      summary: Consume hospital domain events
+      description: |
+        Used by every Kafka consumer. Consumers commit offsets only after the
+        database transaction (business write plus processed-event row) commits.
+        Unknown `eventType` values are logged and skipped for forward
+        compatibility; invalid payloads are retried and then routed to
+        `hospital.events.dlq`.
+      message:
+        oneOf:
+          - $ref: '#/components/messages/PatientRegistered'
+          - $ref: '#/components/messages/AppointmentBooked'
+          - $ref: '#/components/messages/AppointmentCancelled'
+          - $ref: '#/components/messages/EncounterCompleted'
+          - $ref: '#/components/messages/LabResultReady'
+          - $ref: '#/components/messages/InvoiceIssued'
+          - $ref: '#/components/messages/PaymentCompleted'
+          - $ref: '#/components/messages/PaymentFailed'
+
+components:
+  securitySchemes:
+    saslScram:
+      type: scramSha512
+      description: SASL/SCRAM service credentials injected from the secret store.
+
+  schemas:
+    EventHeaders:
+      type: object
+      description: |
+        Common Kafka headers. `eventId` is the idempotency key; `correlationId`
+        links the event to the originating HTTP request and OpenTelemetry trace.
+      required:
+        - eventId
+        - eventType
+        - occurredAt
+        - aggregateId
+        - correlationId
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: Unique event UUID generated by the outbox.
+        eventType:
+          type: string
+          enum:
+            - PatientRegistered
+            - AppointmentBooked
+            - AppointmentCancelled
+            - EncounterCompleted
+            - LabResultReady
+            - InvoiceIssued
+            - PaymentCompleted
+            - PaymentFailed
+          description: Avro record name and discriminator for the payload.
+        occurredAt:
+          type: string
+          format: date-time
+          description: Instant the domain event occurred (ISO-8601 UTC).
+        aggregateId:
+          type: string
+          description: Aggregate UUID; must equal the Kafka message key.
+        correlationId:
+          type: string
+          description: Correlation ID propagated from the inbound request.
+        contentType:
+          type: string
+          default: application/avro
+          description: Serialized payload media type.
+
+  messages:
+    PatientRegistered:
+      name: PatientRegistered
+      title: Patient registered
+      summary: A new patient record has been created.
+      description: |
+        Produced by patient-service inside the transaction that creates the
+        patient and its outbox row. Consumed by notification-service (welcome
+        message), analytics-service (registration funnel), audit-service
+        (access trail), and optionally insurance-service for an eligibility
+        pre-check.
+      contentType: application/avro
+      schemaFormat: 'application/vnd.apache.avro+json;version=1.9.0'
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      correlationId:
+        description: Correlation ID from the registration request.
+        location: '$message.header#/correlationId'
+      bindings:
+        kafka:
+          key:
+            type: string
+            description: patientId
+          bindingVersion: '0.4.0'
+      payload:
+        $ref: '../avro/PatientRegistered.avsc'
+      x-producers:
+        - patient-service
+      x-consumers:
+        - notification-service
+        - analytics-service
+        - audit-service
+        - insurance-service
+      examples:
+        - name: newPatient
+          summary: Patient registered through the portal
+          headers:
+            eventId: '4d6f3d8e-3a2f-4e4a-9e4e-6f6c2a0b8c11'
+            eventType: PatientRegistered
+            occurredAt: '2026-11-05T09:15:30Z'
+            aggregateId: 'f2b1c7d0-8f10-4a4f-9f08-1b2c3d4e5f60'
+            correlationId: 'req-20261105-091530-001'
+          payload:
+            patientId: 'f2b1c7d0-8f10-4a4f-9f08-1b2c3d4e5f60'
+            mrn: 'MRN-2026-000123'
+            firstName: 'Amina'
+            lastName: 'Rahimi'
+            email: 'amina.rahimi@example.com'
+            phone: '+1-555-0100'
+            registeredAt: 1762334130000
+            insuranceProvider: 'Acme Health'
+            insurancePolicyNumber: 'POL-778812'
+
+    AppointmentBooked:
+      name: AppointmentBooked
+      title: Appointment booked
+      summary: A slot was locked and an appointment was committed.
+      description: |
+        Produced by appointment-service after the optimistic-locking UPDATE
+        succeeds. Consumed by notification-service (SMS confirmation),
+        ml-prediction-service (feature update and no-show risk score),
+        analytics-service, and audit-service.
+      contentType: application/avro
+      schemaFormat: 'application/vnd.apache.avro+json;version=1.9.0'
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      correlationId:
+        description: Correlation ID from the booking request.
+        location: '$message.header#/correlationId'
+      bindings:
+        kafka:
+          key:
+            type: string
+            description: appointmentId
+          bindingVersion: '0.4.0'
+      payload:
+        $ref: '../avro/AppointmentBooked.avsc'
+      x-producers:
+        - appointment-service
+      x-consumers:
+        - notification-service
+        - ml-prediction-service
+        - analytics-service
+        - audit-service
+      examples:
+        - name: booked
+          summary: General-practice appointment booked
+          headers:
+            eventId: '9a0b1c2d-3e4f-4051-8679-0a1b2c3d4e5f'
+            eventType: AppointmentBooked
+            occurredAt: '2026-11-05T09:20:00Z'
+            aggregateId: 'c8d9e0f1-2a3b-4c5d-8e9f-0a1b2c3d4e5f'
+            correlationId: 'req-20261105-092000-004'
+          payload:
+            appointmentId: 'c8d9e0f1-2a3b-4c5d-8e9f-0a1b2c3d4e5f'
+            patientId: 'f2b1c7d0-8f10-4a4f-9f08-1b2c3d4e5f60'
+            doctorId: 'd1e2f3a4-b5c6-4d7e-8f90-1a2b3c4d5e6f'
+            departmentId: 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d'
+            slotStart: 1762336800000
+            slotEnd: 1762338600000
+            bookedAt: 1762334400000
+
+    AppointmentCancelled:
+      name: AppointmentCancelled
+      title: Appointment cancelled
+      summary: An appointment was cancelled or rescheduled.
+      description: |
+        Produced by appointment-service. Consumed by notification-service,
+        ml-prediction-service, analytics-service, and audit-service.
+      contentType: application/avro
+      schemaFormat: 'application/vnd.apache.avro+json;version=1.9.0'
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      correlationId:
+        description: Correlation ID from the cancellation request.
+        location: '$message.header#/correlationId'
+      bindings:
+        kafka:
+          key:
+            type: string
+            description: appointmentId
+          bindingVersion: '0.4.0'
+      payload:
+        $ref: '../avro/AppointmentCancelled.avsc'
+      x-producers:
+        - appointment-service
+      x-consumers:
+        - notification-service
+        - ml-prediction-service
+        - analytics-service
+        - audit-service
+      examples:
+        - name: patientCancelled
+          summary: Patient cancels 24 hours before the slot
+          headers:
+            eventId: '7b8c9d0e-1f2a-4b3c-9d4e-5f6a7b8c9d0e'
+            eventType: AppointmentCancelled
+            occurredAt: '2026-11-05T12:05:00Z'
+            aggregateId: 'c8d9e0f1-2a3b-4c5d-8e9f-0a1b2c3d4e5f'
+            correlationId: 'req-20261105-120500-002'
+          payload:
+            appointmentId: 'c8d9e0f1-2a3b-4c5d-8e9f-0a1b2c3d4e5f'
+            patientId: 'f2b1c7d0-8f10-4a4f-9f08-1b2c3d4e5f60'
+            reason: 'Schedule conflict'
+            cancelledAt: 1762344300000
+
+    EncounterCompleted:
+      name: EncounterCompleted
+      title: Encounter completed
+      summary: The encounter state machine reached COMPLETED (discharge).
+      description: |
+        Produced by encounter-service exactly once per encounter. Consumed by
+        billing-service (assemble the invoice), insurance-service (claim
+        pre-check), analytics-service, and audit-service.
+      contentType: application/avro
+      schemaFormat: 'application/vnd.apache.avro+json;version=1.9.0'
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      correlationId:
+        description: Correlation ID from the discharge request.
+        location: '$message.header#/correlationId'
+      bindings:
+        kafka:
+          key:
+            type: string
+            description: encounterId
+          bindingVersion: '0.4.0'
+      payload:
+        $ref: '../avro/EncounterCompleted.avsc'
+      x-producers:
+        - encounter-service
+      x-consumers:
+        - billing-service
+        - insurance-service
+        - analytics-service
+        - audit-service
+      examples:
+        - name: discharged
+          summary: Outpatient encounter completed after lab and pharmacy
+          headers:
+            eventId: '2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f'
+            eventType: EncounterCompleted
+            occurredAt: '2026-11-05T14:40:00Z'
+            aggregateId: '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d'
+            correlationId: 'req-20261105-144000-009'
+          payload:
+            encounterId: '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d'
+            patientId: 'f2b1c7d0-8f10-4a4f-9f08-1b2c3d4e5f60'
+            doctorId: 'd1e2f3a4-b5c6-4d7e-8f90-1a2b3c4d5e6f'
+            diagnoses:
+              - 'J06.9'
+              - 'R50.9'
+            completedAt: 1762353600000
+
+    LabResultReady:
+      name: LabResultReady
+      title: Lab result ready
+      summary: A verified laboratory result has been released.
+      description: |
+        Produced by lab-service. Consumed by notification-service,
+        encounter-service, ehr-service, billing-service, analytics-service, and
+        audit-service.
+      contentType: application/avro
+      schemaFormat: 'application/vnd.apache.avro+json;version=1.9.0'
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      correlationId:
+        description: Correlation ID from the result-verification request.
+        location: '$message.header#/correlationId'
+      bindings:
+        kafka:
+          key:
+            type: string
+            description: labOrderId
+          bindingVersion: '0.4.0'
+      payload:
+        $ref: '../avro/LabResultReady.avsc'
+      x-producers:
+        - lab-service
+      x-consumers:
+        - notification-service
+        - encounter-service
+        - ehr-service
+        - billing-service
+        - analytics-service
+        - audit-service
+      examples:
+        - name: cbcReady
+          summary: Complete blood count result released
+          headers:
+            eventId: '5e6f7a8b-9c0d-4e1f-8a2b-3c4d5e6f7a8b'
+            eventType: LabResultReady
+            occurredAt: '2026-11-05T13:10:00Z'
+            aggregateId: 'b7c8d9e0-f1a2-4b3c-8d4e-5f6a7b8c9d0e'
+            correlationId: 'req-20261105-131000-011'
+          payload:
+            labOrderId: 'b7c8d9e0-f1a2-4b3c-8d4e-5f6a7b8c9d0e'
+            patientId: 'f2b1c7d0-8f10-4a4f-9f08-1b2c3d4e5f60'
+            testCode: '58410-2'
+            resultSummary: 'CBC within reference range'
+            critical: false
+            readyAt: 1762348200000
+
+    InvoiceIssued:
+      name: InvoiceIssued
+      title: Invoice issued
+      summary: An invoice was assembled and issued for an encounter.
+      description: |
+        Produced by billing-service after insurance adjudication determines the
+        patient/insurer split. Consumed by notification-service,
+        insurance-service, document-service, analytics-service, and
+        audit-service.
+      contentType: application/avro
+      schemaFormat: 'application/vnd.apache.avro+json;version=1.9.0'
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      correlationId:
+        description: Correlation ID from the encounter-completion flow.
+        location: '$message.header#/correlationId'
+      bindings:
+        kafka:
+          key:
+            type: string
+            description: invoiceId
+          bindingVersion: '0.4.0'
+      payload:
+        $ref: '../avro/InvoiceIssued.avsc'
+      x-producers:
+        - billing-service
+      x-consumers:
+        - notification-service
+        - insurance-service
+        - document-service
+        - analytics-service
+        - audit-service
+      examples:
+        - name: issued
+          summary: Invoice with a 70/30 insurer/patient split
+          headers:
+            eventId: '8c9d0e1f-2a3b-4c4d-9e5f-6a7b8c9d0e1f'
+            eventType: InvoiceIssued
+            occurredAt: '2026-11-05T14:45:00Z'
+            aggregateId: 'e4f5a6b7-c8d9-4e0f-8a1b-2c3d4e5f6a7b'
+            correlationId: 'req-20261105-144000-009'
+          payload:
+            invoiceId: 'e4f5a6b7-c8d9-4e0f-8a1b-2c3d4e5f6a7b'
+            encounterId: '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d'
+            patientId: 'f2b1c7d0-8f10-4a4f-9f08-1b2c3d4e5f60'
+            totalAmount: 420.0
+            patientShare: 126.0
+            insurerShare: 294.0
+            currency: USD
+            issuedAt: 1762353900000
+
+    PaymentCompleted:
+      name: PaymentCompleted
+      title: Payment completed
+      summary: A payment was captured successfully.
+      description: |
+        Produced by payment-service after the gateway confirms capture.
+        Consumed by billing-service (close the invoice), document-service
+        (receipt PDF), notification-service, analytics-service, and
+        audit-service.
+      contentType: application/avro
+      schemaFormat: 'application/vnd.apache.avro+json;version=1.9.0'
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      correlationId:
+        description: Correlation ID from the payment request.
+        location: '$message.header#/correlationId'
+      bindings:
+        kafka:
+          key:
+            type: string
+            description: paymentId
+          bindingVersion: '0.4.0'
+      payload:
+        $ref: '../avro/PaymentCompleted.avsc'
+      x-producers:
+        - payment-service
+      x-consumers:
+        - billing-service
+        - document-service
+        - notification-service
+        - analytics-service
+        - audit-service
+      examples:
+        - name: captured
+          summary: Patient share captured by card
+          headers:
+            eventId: '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d'
+            eventType: PaymentCompleted
+            occurredAt: '2026-11-05T15:02:00Z'
+            aggregateId: '9f8e7d6c-5b4a-4938-8271-6a5b4c3d2e1f'
+            correlationId: 'req-20261105-150200-015'
+          payload:
+            paymentId: '9f8e7d6c-5b4a-4938-8271-6a5b4c3d2e1f'
+            invoiceId: 'e4f5a6b7-c8d9-4e0f-8a1b-2c3d4e5f6a7b'
+            patientId: 'f2b1c7d0-8f10-4a4f-9f08-1b2c3d4e5f60'
+            amount: 126.0
+            currency: USD
+            paidAt: 1762354920000
+
+    PaymentFailed:
+      name: PaymentFailed
+      title: Payment failed
+      summary: A payment attempt was declined or errored.
+      description: |
+        Produced by payment-service. Consumed by billing-service (revert the
+        invoice to PENDING), pharmacy-inventory-service (release or reconcile
+        stock), notification-service, analytics-service, and audit-service.
+      contentType: application/avro
+      schemaFormat: 'application/vnd.apache.avro+json;version=1.9.0'
+      headers:
+        $ref: '#/components/schemas/EventHeaders'
+      correlationId:
+        description: Correlation ID from the payment request.
+        location: '$message.header#/correlationId'
+      bindings:
+        kafka:
+          key:
+            type: string
+            description: paymentId
+          bindingVersion: '0.4.0'
+      payload:
+        $ref: '../avro/PaymentFailed.avsc'
+      x-producers:
+        - payment-service
+      x-consumers:
+        - billing-service
+        - pharmacy-inventory-service
+        - notification-service
+        - analytics-service
+        - audit-service
+      examples:
+        - name: declined
+          summary: Card issuer declines the patient share
+          headers:
+            eventId: '6f7a8b9c-0d1e-4f2a-9b3c-4d5e6f7a8b9c'
+            eventType: PaymentFailed
+            occurredAt: '2026-11-05T15:02:00Z'
+            aggregateId: '2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e'
+            correlationId: 'req-20261105-150200-016'
+          payload:
+            paymentId: '2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e'
+            invoiceId: 'e4f5a6b7-c8d9-4e0f-8a1b-2c3d4e5f6a7b'
+            patientId: 'f2b1c7d0-8f10-4a4f-9f08-1b2c3d4e5f60'
+            amount: 126.0
+            reason: 'card_declined'
+            failedAt: 1762354920000
