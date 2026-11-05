@@ -1,0 +1,119 @@
+syntax = "proto3";
+
+package hospital.v1;
+
+option java_package = "com.hospital.contracts.v1";
+option java_multiple_files = true;
+option java_outer_classname = "PatientProto";
+
+import "google/protobuf/timestamp.proto";
+import "common.proto";
+
+// Synchronous patient read/registration contract. The Java patient-service is
+// the system of record; Python services use this contract when they need a
+// patient by ID or email at request time instead of materialising a copy from
+// PatientRegistered.
+service PatientService {
+  // Fetch a patient by internal UUID.
+  rpc GetPatient(GetPatientRequest) returns (Patient);
+
+  // Fetch a patient by unique email address. Used during self-service login
+  // linking and by notification-service before sending a message.
+  rpc GetPatientByEmail(GetPatientByEmailRequest) returns (Patient);
+
+  // Register a new patient. The server assigns the UUID, MRN and timestamps,
+  // validates uniqueness of email/nationalId, and publishes PatientRegistered
+  // through the transactional outbox.
+  rpc RegisterPatient(RegisterPatientRequest) returns (Patient);
+
+  // List patients with offset pagination. Intended for staff consoles, not for
+  // bulk export.
+  rpc ListPatients(PageRequest) returns (PatientList);
+}
+
+enum Gender {
+  GENDER_UNSPECIFIED = 0;
+  GENDER_MALE = 1;
+  GENDER_FEMALE = 2;
+  GENDER_OTHER = 3;
+  GENDER_UNKNOWN = 4;
+}
+
+message InsurancePolicy {
+  string id = 1;
+  string provider = 2;
+  string policy_number = 3;
+  string member_id = 4;
+  // ISO-8601 calendar date (YYYY-MM-DD), matching java.time.LocalDate.
+  string valid_from = 5;
+  // ISO-8601 calendar date (YYYY-MM-DD); empty means open-ended.
+  string valid_to = 6;
+  // Insurer coverage percentage, 0..100.
+  int32 coverage_percent = 7;
+}
+
+message Patient {
+  string id = 1;
+  // Medical record number assigned by patient-service, e.g. MRN-2026-000123.
+  string mrn = 2;
+  string first_name = 3;
+  string last_name = 4;
+  // ISO-8601 calendar date (YYYY-MM-DD).
+  string date_of_birth = 5;
+  Gender gender = 6;
+  string email = 7;
+  string phone = 8;
+  string address_line = 9;
+  string city = 10;
+  string country = 11;
+  string national_id = 12;
+  // Free-text allergies. Services that render this value must treat it as PII.
+  string allergies = 13;
+  string emergency_contact_name = 14;
+  string emergency_contact_phone = 15;
+  InsurancePolicy insurance_policy = 16;
+  // Optimistic-locking version maintained by the JPA @Version column.
+  int64 version = 17;
+  google.protobuf.Timestamp created_at = 18;
+  google.protobuf.Timestamp updated_at = 19;
+}
+
+message InsurancePolicyInput {
+  string provider = 1;
+  string policy_number = 2;
+  string member_id = 3;
+  string valid_from = 4;
+  string valid_to = 5;
+  int32 coverage_percent = 6;
+}
+
+message GetPatientRequest {
+  string id = 1;
+}
+
+message GetPatientByEmailRequest {
+  string email = 1;
+}
+
+message RegisterPatientRequest {
+  string first_name = 1;
+  string last_name = 2;
+  // ISO-8601 calendar date (YYYY-MM-DD).
+  string date_of_birth = 3;
+  Gender gender = 4;
+  string email = 5;
+  string phone = 6;
+  string address_line = 7;
+  string city = 8;
+  string country = 9;
+  string national_id = 10;
+  string allergies = 11;
+  string emergency_contact_name = 12;
+  string emergency_contact_phone = 13;
+  InsurancePolicyInput insurance_policy = 14;
+}
+
+message PatientList {
+  repeated Patient patients = 1;
+  PageResponse page = 2;
+}

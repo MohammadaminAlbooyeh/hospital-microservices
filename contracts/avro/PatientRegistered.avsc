@@ -1,0 +1,58 @@
+{
+  "type": "record",
+  "namespace": "com.hospital.events",
+  "name": "PatientRegistered",
+  "doc": "Emitted once when patient-service creates a new patient record. Consumers: notification-service (welcome message), analytics-service (registration funnel), audit-service (access trail), insurance-service (optional eligibility pre-check).",
+  "fields": [
+    {
+      "name": "patientId",
+      "type": "string",
+      "doc": "Internal UUID assigned by patient-service."
+    },
+    {
+      "name": "mrn",
+      "type": ["null", "string"],
+      "default": null,
+      "doc": "Medical record number assigned by patient-service."
+    },
+    {
+      "name": "firstName",
+      "type": "string",
+      "doc": "Patient given name. PII: mask in logs."
+    },
+    {
+      "name": "lastName",
+      "type": "string",
+      "doc": "Patient family name. PII: mask in logs."
+    },
+    {
+      "name": "email",
+      "type": "string",
+      "doc": "Unique contact email. PII: mask in logs."
+    },
+    {
+      "name": "phone",
+      "type": ["null", "string"],
+      "default": null,
+      "doc": "Contact phone number. PII: mask in logs."
+    },
+    {
+      "name": "registeredAt",
+      "type": ["null", {"type": "long", "logicalType": "timestamp-millis"}],
+      "default": null,
+      "doc": "Instant the patient record was created (UTC epoch millis)."
+    },
+    {
+      "name": "insuranceProvider",
+      "type": ["null", "string"],
+      "default": null,
+      "doc": "Insurer name when a policy was supplied at registration."
+    },
+    {
+      "name": "insurancePolicyNumber",
+      "type": ["null", "string"],
+      "default": null,
+      "doc": "Policy number when a policy was supplied at registration."
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "type": "record",
+  "namespace": "com.hospital.events",
+  "name": "PaymentCompleted",
+  "doc": "Emitted by payment-service after the gateway confirms capture. Consumers: billing-service (mark invoice PAID/PARTIALLY_PAID), document-service (generate PDF receipt), notification-service (payment confirmation), analytics-service, audit-service.",
+  "fields": [
+    {
+      "name": "paymentId",
+      "type": "string",
+      "doc": "Payment UUID; also used as the Kafka message key."
+    },
+    {
+      "name": "invoiceId",
+      "type": "string",
+      "doc": "Invoice UUID being settled."
+    },
+    {
+      "name": "patientId",
+      "type": ["null", "string"],
+      "default": null,
+      "doc": "Patient UUID that owns the invoice."
+    },
+    {
+      "name": "amount",
+      "type": "double",
+      "doc": "Captured amount in `currency` major units."
+    },
+    {
+      "name": "currency",
+      "type": "string",
+      "default": "USD",
+      "doc": "ISO-4217 currency code."
+    },
+    {
+      "name": "paidAt",
+      "type": ["null", {"type": "long", "logicalType": "timestamp-millis"}],
+      "default": null,
+      "doc": "Instant the payment was captured."
+    }
+  ]
+}

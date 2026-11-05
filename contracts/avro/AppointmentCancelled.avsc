@@ -1,0 +1,30 @@
+{
+  "type": "record",
+  "namespace": "com.hospital.events",
+  "name": "AppointmentCancelled",
+  "doc": "Emitted by appointment-service when a booking is cancelled by the patient, staff, or a reschedule workflow. Consumers: notification-service (cancellation notice), ml-prediction-service (exclude from no-show training / update features), analytics-service (cancellation rate), audit-service.",
+  "fields": [
+    {
+      "name": "appointmentId",
+      "type": "string",
+      "doc": "Appointment UUID; also used as the Kafka message key."
+    },
+    {
+      "name": "patientId",
+      "type": "string",
+      "doc": "Patient UUID from patient-service."
+    },
+    {
+      "name": "reason",
+      "type": ["null", "string"],
+      "default": null,
+      "doc": "Optional free-text cancellation reason. PII: mask in logs."
+    },
+    {
+      "name": "cancelledAt",
+      "type": ["null", {"type": "long", "logicalType": "timestamp-millis"}],
+      "default": null,
+      "doc": "Instant the cancellation was committed."
+    }
+  ]
+}

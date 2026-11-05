@@ -1,0 +1,41 @@
+{
+  "type": "record",
+  "namespace": "com.hospital.events",
+  "name": "PaymentFailed",
+  "doc": "Emitted by payment-service when a capture is declined or errors. Consumers: billing-service (revert invoice to PENDING), pharmacy-inventory-service (release or reconcile stock reservations), notification-service (payment failure notice), analytics-service, audit-service.",
+  "fields": [
+    {
+      "name": "paymentId",
+      "type": "string",
+      "doc": "Payment attempt UUID; also used as the Kafka message key."
+    },
+    {
+      "name": "invoiceId",
+      "type": "string",
+      "doc": "Invoice UUID that failed to settle."
+    },
+    {
+      "name": "patientId",
+      "type": ["null", "string"],
+      "default": null,
+      "doc": "Patient UUID that owns the invoice."
+    },
+    {
+      "name": "amount",
+      "type": "double",
+      "doc": "Attempted amount in `currency` major units."
+    },
+    {
+      "name": "reason",
+      "type": ["null", "string"],
+      "default": null,
+      "doc": "Gateway decline code or safe human-readable reason. Never include PAN or CVV."
+    },
+    {
+      "name": "failedAt",
+      "type": ["null", {"type": "long", "logicalType": "timestamp-millis"}],
+      "default": null,
+      "doc": "Instant the failure was recorded."
+    }
+  ]
+}

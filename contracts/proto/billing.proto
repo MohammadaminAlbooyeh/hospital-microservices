@@ -1,0 +1,110 @@
+syntax = "proto3";
+
+package hospital.v1;
+
+option java_package = "com.hospital.contracts.v1";
+option java_multiple_files = true;
+option java_outer_classname = "BillingProto";
+
+import "google/protobuf/timestamp.proto";
+import "common.proto";
+
+// Invoice lifecycle contract. billing-service assembles an invoice from the
+// charges recorded for an encounter. Invoice status transitions are:
+// DRAFT -> PENDING -> PARTIALLY_PAID -> PAID, with PENDING/PARTIALLY_PAID ->
+// OVERDUE and any non-final state -> VOID.
+service BillingService {
+  // Create an invoice from encounter charges. The request is idempotent on
+  // `idempotency_key`; replaying the same key returns the original invoice.
+  rpc CreateInvoice(CreateInvoiceRequest) returns (Invoice);
+
+  // Fetch an invoice by UUID.
+  rpc GetInvoice(GetInvoiceRequest) returns (Invoice);
+
+  // List invoices using offset pagination.
+  rpc ListInvoices(PageRequest) returns (InvoiceList);
+
+  // Void an unpaid invoice. Paid invoices must be refunded through
+  // payment-service first.
+  rpc VoidInvoice(VoidInvoiceRequest) returns (Invoice);
+}
+
+enum InvoiceStatus {
+  INVOICE_STATUS_UNSPECIFIED = 0;
+  INVOICE_STATUS_DRAFT = 1;
+  INVOICE_STATUS_PENDING = 2;
+  INVOICE_STATUS_PARTIALLY_PAID = 3;
+  INVOICE_STATUS_PAID = 4;
+  INVOICE_STATUS_OVERDUE = 5;
+  INVOICE_STATUS_VOID = 6;
+}
+
+message InvoiceLine {
+  string id = 1;
+  // Human-readable line description shown on the PDF.
+  string description = 2;
+  // Charge code understood by billing, e.g. CONSULT-GP or LAB-CBC.
+  string service_code = 3;
+  int32 quantity = 4;
+  Money unit_price = 5;
+  Money line_total = 6;
+  // Optional owning department for revenue reporting.
+  string department_id = 7;
+}
+
+message Invoice {
+  string id = 1;
+  // Human-readable, gap-free invoice number, e.g. INV-2026-000042.
+  string invoice_number = 2;
+  string encounter_id = 3;
+  string patient_id = 4;
+  InvoiceStatus status = 5;
+  repeated InvoiceLine lines = 6;
+  // Sum of line totals.
+  Money total = 7;
+  // Portion payable by the patient after insurer adjudication.
+  Money patient_share = 8;
+  // Portion payable by the insurer.
+  Money insurer_share = 9;
+  google.protobuf.Timestamp issued_at = 10;
+  google.protobuf.Timestamp due_at = 11;
+  google.protobuf.Timestamp paid_at = 12;
+  google.protobuf.Timestamp voided_at = 13;
+  int64 version = 14;
+  google.protobuf.Timestamp created_at = 15;
+  google.protobuf.Timestamp updated_at = 16;
+}
+
+message InvoiceLineInput {
+  string description = 1;
+  string service_code = 2;
+  int32 quantity = 3;
+  Money unit_price = 4;
+  string department_id = 5;
+}
+
+message CreateInvoiceRequest {
+  string encounter_id = 1;
+  string patient_id = 2;
+  repeated InvoiceLineInput lines = 3;
+  // ISO-4217 code applied to every line. Defaults to USD when empty.
+  string currency = 4;
+  google.protobuf.Timestamp due_at = 5;
+  // Client-supplied key scoped to the caller. Required by billing-service.
+  string idempotency_key = 6;
+}
+
+message GetInvoiceRequest {
+  string id = 1;
+}
+
+message VoidInvoiceRequest {
+  string id = 1;
+  string reason = 2;
+  string idempotency_key = 3;
+}
+
+message InvoiceList {
+  repeated Invoice invoices = 1;
+  PageResponse page = 2;
+}

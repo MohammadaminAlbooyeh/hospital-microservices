@@ -1,0 +1,73 @@
+syntax = "proto3";
+
+package hospital.v1;
+
+option java_package = "com.hospital.contracts.v1";
+option java_multiple_files = true;
+option java_outer_classname = "CommonProto";
+
+import "google/protobuf/timestamp.proto";
+
+// A fixed-point monetary amount. `units` holds the whole currency unit and
+// `nanos` holds the fractional part in the range 0..999,999,999. This mirrors
+// com.google.type.Money so amounts survive a round trip through both stacks
+// without binary floating-point drift.
+message Money {
+  // ISO-4217 currency code, for example "USD" or "EUR".
+  string currency = 1;
+  // Whole units of the currency. May be negative for credits/refunds.
+  int64 units = 2;
+  // Fractional units in nanos (1 unit = 1,000,000,000 nanos).
+  int32 nanos = 3;
+}
+
+// A small wrapper used when a field needs to carry an explicit, nullable
+// timestamp across a language boundary. Prefer google.protobuf.Timestamp
+// directly for required timestamps; use this message when "absent" must be
+// distinguishable from the Unix epoch.
+message TimestampValue {
+  google.protobuf.Timestamp value = 1;
+}
+
+// Half-open time range: `start` is inclusive, `end` is exclusive.
+message TimeRange {
+  google.protobuf.Timestamp start = 1;
+  google.protobuf.Timestamp end = 2;
+}
+
+// Cursor-free, offset pagination request. `page` is zero-based.
+message PageRequest {
+  // Zero-based page index. Values below zero are rejected by services.
+  int32 page = 1;
+  // Page size. Services clamp this to their configured maximum (default 100).
+  int32 size = 2;
+}
+
+// Pagination metadata returned alongside a page of results.
+message PageResponse {
+  int32 page = 1;
+  int32 size = 2;
+  // Total number of matching records across all pages.
+  int64 total = 3;
+}
+
+// Enriched pagination metadata for endpoints that need navigation flags.
+message Pagination {
+  int32 page = 1;
+  int32 size = 2;
+  int64 total = 3;
+  bool has_next = 4;
+  bool has_previous = 5;
+}
+
+// Machine-readable error returned by REST and gRPC adapters. The
+// `correlation_id` is the same value propagated in the X-Correlation-Id header
+// and the Kafka `correlationId` header so operators can join logs and traces.
+message ErrorDetail {
+  // Stable, upper-snake-case error code, for example PATIENT_NOT_FOUND.
+  string code = 1;
+  // Human-readable, PII-free description safe to return to a client.
+  string message = 2;
+  // Correlation identifier for this request.
+  string correlation_id = 3;
+}

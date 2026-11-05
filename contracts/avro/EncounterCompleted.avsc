@@ -1,0 +1,39 @@
+{
+  "type": "record",
+  "namespace": "com.hospital.events",
+  "name": "EncounterCompleted",
+  "doc": "Emitted by encounter-service when the encounter state machine reaches COMPLETED (discharge). Consumers: billing-service (assemble invoice), insurance-service (claim pre-check), analytics-service (length of stay / throughput), audit-service.",
+  "fields": [
+    {
+      "name": "encounterId",
+      "type": "string",
+      "doc": "Encounter UUID; also used as the Kafka message key."
+    },
+    {
+      "name": "patientId",
+      "type": "string",
+      "doc": "Patient UUID from patient-service."
+    },
+    {
+      "name": "doctorId",
+      "type": ["null", "string"],
+      "default": null,
+      "doc": "Attending doctor UUID, when assigned."
+    },
+    {
+      "name": "diagnoses",
+      "type": {
+        "type": "array",
+        "items": "string"
+      },
+      "default": [],
+      "doc": "ICD-10 diagnosis codes recorded during the encounter. Empty when no coded diagnosis exists yet."
+    },
+    {
+      "name": "completedAt",
+      "type": ["null", {"type": "long", "logicalType": "timestamp-millis"}],
+      "default": null,
+      "doc": "Instant the encounter transitioned to COMPLETED."
+    }
+  ]
+}
