@@ -1,0 +1,63 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hospital-config
+  labels:
+    app.kubernetes.io/part-of: hospital-platform
+    app.kubernetes.io/component: platform-config
+data:
+  # ---------------------------------------------------------------------------
+  # Shared, non-secret platform configuration. Overlays override these values.
+  # ---------------------------------------------------------------------------
+  ENVIRONMENT: dev
+  LOG_LEVEL: INFO
+  SPRING_PROFILES_ACTIVE: dev
+
+  KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+  KAFKA_TOPIC: hospital.events
+
+  EUREKA_URL: http://config-discovery-service:8888/eureka/
+  CONFIG_SERVER_URL: http://config-discovery-service:8888
+
+  DB_HOST: postgres
+  DB_PORT: "5432"
+  DB_USER: hospital
+
+  TIMESCALE_HOST: timescaledb
+  TIMESCALE_PORT: "5432"
+  TIMESCALE_DB: hospital_analytics
+  TIMESCALE_USER: hospital
+
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+
+  KEYCLOAK_URL: http://keycloak:8080
+  KEYCLOAK_REALM: hospital
+
+  SMTP_HOST: mailhog
+  SMTP_PORT: "1025"
+  SMTP_FROM: no-reply@hospital.local
+
+  OTLP_ENDPOINT: http://otel-collector:4317
+
+  CORS_ALLOWED_ORIGINS: http://localhost:3000,http://localhost:3001,http://localhost:3002
+
+  AUTH_SERVICE_URL: http://auth-service:8081
+  PATIENT_SERVICE_URL: http://patient-service:8082
+  APPOINTMENT_SERVICE_URL: http://appointment-service:8083
+  DOCTOR_SERVICE_URL: http://doctor-service:8084
+  DEPARTMENT_SERVICE_URL: http://department-service:8085
+  ENCOUNTER_SERVICE_URL: http://encounter-service:8086
+  EHR_SERVICE_URL: http://ehr-service:8087
+  PRESCRIPTION_SERVICE_URL: http://prescription-service:8088
+  LAB_SERVICE_URL: http://lab-service:8089
+  PHARMACY_SERVICE_URL: http://pharmacy-inventory-service:8090
+  BILLING_SERVICE_URL: http://billing-service:8091
+  PAYMENT_SERVICE_URL: http://payment-service:8092
+  TRIAGE_SERVICE_URL: http://triage-service:8001
+  INSURANCE_SERVICE_URL: http://insurance-service:8002
+  NOTIFICATION_SERVICE_URL: http://notification-service:8003
+  ANALYTICS_SERVICE_URL: http://analytics-service:8004
+  ML_SERVICE_URL: http://ml-prediction-service:8005
+  DOCUMENT_SERVICE_URL: http://document-service:8006
+  AUDIT_SERVICE_URL: http://audit-service:8007

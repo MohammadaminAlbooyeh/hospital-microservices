@@ -1,0 +1,33 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: hospital-staging
+
+resources:
+  - ../../base
+
+patches:
+  - path: namespace-patch.yaml
+    target:
+      group: ""
+      version: v1
+      kind: Namespace
+      name: hospital
+  - path: service-resources-patch.yaml
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      labelSelector: "tier=service"
+  - path: configmap-patch.yaml
+    target:
+      group: ""
+      version: v1
+      kind: ConfigMap
+      name: hospital-config
+  - path: ingress-patch.yaml
+    target:
+      group: networking.k8s.io
+      version: v1
+      kind: Ingress
+      name: hospital-ingress

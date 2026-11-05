@@ -1,0 +1,107 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ml-prediction-service
+  labels:
+    app: ml-prediction-service
+    tier: service
+    app.kubernetes.io/part-of: hospital-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ml-prediction-service
+  template:
+    metadata:
+      labels:
+        app: ml-prediction-service
+        tier: service
+        app.kubernetes.io/part-of: hospital-platform
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /metrics
+        prometheus.io/port: "8005"
+    spec:
+      containers:
+        - name: ml-prediction-service
+          image: hospital/ml-prediction-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8005
+          envFrom:
+            - configMapRef:
+                name: hospital-config
+            - secretRef:
+                name: hospital-secrets
+          env:
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: SERVICE_PORT
+              value: "8005"
+            - name: DB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: hospital-config
+                  key: DB_HOST
+            - name: DB_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: hospital-config
+                  key: DB_PORT
+            - name: DB_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: hospital-config
+                  key: DB_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: hospital-secrets
+                  key: DB_PASSWORD
+            - name: DB_NAME
+              value: hospital_ml
+            - name: DATABASE_URL
+              value: postgresql+asyncpg://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)
+            - name: KAFKA_GROUP_ID
+              value: ml-prediction-service
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 200m
+              memory: 384Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ml-prediction-service
+  labels:
+    app: ml-prediction-service
+    tier: service
+    app.kubernetes.io/part-of: hospital-platform
+spec:
+  type: ClusterIP
+  selector:
+    app: ml-prediction-service
+  ports:
+    - name: http
+      port: 8005
+      targetPort: http

@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pharmacy-inventory-service
+  labels:
+    app: pharmacy-inventory-service
+    tier: service
+    app.kubernetes.io/part-of: hospital-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pharmacy-inventory-service
+  template:
+    metadata:
+      labels:
+        app: pharmacy-inventory-service
+        tier: service
+        app.kubernetes.io/part-of: hospital-platform
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /actuator/prometheus
+        prometheus.io/port: "8090"
+    spec:
+      containers:
+        - name: pharmacy-inventory-service
+          image: hospital/pharmacy-inventory-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8090
+          envFrom:
+            - configMapRef:
+                name: hospital-config
+            - secretRef:
+                name: hospital-secrets
+          env:
+            - name: SERVER_PORT
+              value: "8090"
+            - name: DB_NAME
+              value: hospital_pharmacy
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:MaxRAMPercentage=75.0"
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pharmacy-inventory-service
+  labels:
+    app: pharmacy-inventory-service
+    tier: service
+    app.kubernetes.io/part-of: hospital-platform
+spec:
+  type: ClusterIP
+  selector:
+    app: pharmacy-inventory-service
+  ports:
+    - name: http
+      port: 8090
+      targetPort: http

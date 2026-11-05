@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hospital-config
+data:
+  ENVIRONMENT: staging
+  SPRING_PROFILES_ACTIVE: staging
+  LOG_LEVEL: INFO

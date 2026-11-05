@@ -1,0 +1,18 @@
+- op: replace
+  path: /spec/replicas
+  value: 2
+- op: replace
+  path: /spec/template/spec/containers/0/resources/requests
+  value:
+    cpu: 200m
+    memory: 384Mi
+- op: replace
+  path: /spec/template/spec/containers/0/resources/limits
+  value:
+    cpu: 750m
+    memory: 768Mi
+- op: add
+  path: /spec/template/spec/containers/0/env/-
+  value:
+    name: ENVIRONMENT
+    value: staging
