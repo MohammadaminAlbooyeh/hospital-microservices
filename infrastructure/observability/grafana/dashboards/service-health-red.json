@@ -1,0 +1,95 @@
+{
+  "title": "Hospital Platform - Service Health (RED)",
+  "uid": "hospital-service-health-red",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": ["hospital-platform", "red-metrics"],
+  "timezone": "browser",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "type": "query",
+        "datasource": "Prometheus",
+        "query": "label_values(up{namespace=\"hospital\"}, service)",
+        "includeAll": true,
+        "multi": true
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Request Rate (req/s)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum by (service) (rate(http_server_requests_seconds_count{namespace=\"hospital\", service=~\"$service\"}[5m]))",
+          "legendFormat": "{{service}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Error Rate (%)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "100 * sum by (service) (rate(http_server_requests_seconds_count{namespace=\"hospital\", service=~\"$service\", status=~\"5..\"}[5m])) / sum by (service) (rate(http_server_requests_seconds_count{namespace=\"hospital\", service=~\"$service\"}[5m]))",
+          "legendFormat": "{{service}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "P95 Latency",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (service, le) (rate(http_server_requests_seconds_bucket{namespace=\"hospital\", service=~\"$service\"}[5m])))",
+          "legendFormat": "{{service}} p95"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "P99 Latency",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (service, le) (rate(http_server_requests_seconds_bucket{namespace=\"hospital\", service=~\"$service\"}[5m])))",
+          "legendFormat": "{{service}} p99"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Pod Restarts (last 1h)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "expr": "sum by (pod) (increase(kube_pod_container_status_restarts_total{namespace=\"hospital\"}[1h]))",
+          "legendFormat": "{{pod}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Service Up/Down",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [
+        {
+          "expr": "sum by (service) (up{namespace=\"hospital\", service=~\"$service\"})",
+          "legendFormat": "{{service}}"
+        }
+      ]
+    }
+  ]
+}

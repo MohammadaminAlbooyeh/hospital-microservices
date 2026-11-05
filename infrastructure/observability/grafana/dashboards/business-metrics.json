@@ -1,0 +1,102 @@
+{
+  "title": "Hospital Platform - Management Dashboard",
+  "uid": "hospital-business-metrics",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": ["hospital-platform", "business-metrics"],
+  "timezone": "browser",
+  "time": { "from": "now-24h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "department",
+        "type": "query",
+        "datasource": "Prometheus",
+        "query": "label_values(hospital_appointment_wait_seconds, department)",
+        "includeAll": true,
+        "multi": true
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Average Patient Wait Time (min)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "avg by (department) (rate(hospital_appointment_wait_seconds_sum{department=~\"$department\"}[1h]) / rate(hospital_appointment_wait_seconds_count{department=~\"$department\"}[1h])) / 60",
+          "legendFormat": "{{department}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "No-Show Rate (%)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "100 * sum by (department) (increase(hospital_appointment_no_show_total{department=~\"$department\"}[1d])) / sum by (department) (increase(hospital_appointment_total{department=~\"$department\"}[1d]))",
+          "legendFormat": "{{department}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Bed Occupancy Rate (%)",
+      "type": "gauge",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "100 * sum(hospital_beds_occupied) by (department) / sum(hospital_beds_total) by (department)",
+          "legendFormat": "{{department}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "min": 0, "max": 100, "unit": "percent" }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Revenue by Department (24h)",
+      "type": "barchart",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "sum by (department) (increase(hospital_billing_revenue_total{department=~\"$department\"}[24h]))",
+          "legendFormat": "{{department}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Active Encounters (current)",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "expr": "sum(hospital_encounters_active) by (department)",
+          "legendFormat": "{{department}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Prescriptions Filled vs. Pending",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [
+        {
+          "expr": "sum(rate(hospital_prescription_filled_total[1h]))",
+          "legendFormat": "filled/hr"
+        },
+        {
+          "expr": "sum(hospital_prescription_pending)",
+          "legendFormat": "pending"
+        }
+      ]
+    }
+  ]
+}

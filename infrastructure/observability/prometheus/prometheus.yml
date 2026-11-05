@@ -1,0 +1,73 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: hospital-platform
+
+rule_files: []
+
+scrape_configs:
+  # Scrape every pod in the "hospital" namespace that is annotated for
+  # scraping, matching the prometheus.io/* annotations set on each
+  # Deployment in infrastructure/k8s/base/*.yaml and the Helm chart.
+  - job_name: hospital-services
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - hospital
+            - hospital-dev
+            - hospital-staging
+            - hospital-prod
+    relabel_configs:
+      # Only keep pods explicitly opted-in via prometheus.io/scrape: "true"
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: "true"
+      # Allow overriding the metrics path (defaults to /actuator/prometheus
+      # for Java services, /metrics for Python services).
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+      # Allow overriding the port scraped, defaulting to the pod's declared port.
+      - source_labels:
+          [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+        target_label: __address__
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: namespace
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        target_label: service
+      - source_labels: [__meta_kubernetes_pod_label_tier]
+        target_label: tier
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+
+  # Scrape the OpenTelemetry Collector's own Prometheus exporter endpoint
+  # (infrastructure/observability/otel-collector-config.yaml), which
+  # re-exposes OTLP metrics forwarded by services that use the OTLP SDK
+  # instead of exposing /actuator/prometheus or /metrics directly.
+  - job_name: otel-collector
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+            names:
+              - hospital
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        action: keep
+        regex: otel-collector
+      - source_labels: [__address__]
+        action: replace
+        regex: ([^:]+)(?::\d+)?
+        replacement: $1:8889
+        target_label: __address__
+    metrics_path: /metrics
+
+  # Prometheus scraping itself.
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

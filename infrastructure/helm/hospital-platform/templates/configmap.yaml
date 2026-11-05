@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hospital-config
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app.kubernetes.io/part-of: hospital-platform
+    app.kubernetes.io/component: platform-config
+data:
+  {{- range $key, $value := .Values.config }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}

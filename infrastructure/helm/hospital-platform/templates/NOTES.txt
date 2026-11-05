@@ -1,2 +1,11 @@
-Hospital platform Helm chart scaffold installed.
-Populate templates for gateway, services, ingress, and config/secrets.
+Hospital platform Helm chart.
+
+Installed release "{{ .Release.Name }}" into namespace "{{ .Values.global.namespace }}".
+
+{{ len .Values.services }} microservices deployed (see values.yaml `services` map).
+API gateway is reachable via the ingress host: {{ .Values.ingress.host }}
+
+To override an individual service's image/replicas/resources, use:
+  helm upgrade {{ .Release.Name }} . --set services.patient-service.replicas=3
+or supply an environment-specific values file, e.g.:
+  helm upgrade {{ .Release.Name }} . -f values-prod.yaml

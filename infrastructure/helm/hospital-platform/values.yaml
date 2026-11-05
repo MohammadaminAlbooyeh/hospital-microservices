@@ -1,3 +1,310 @@
 global:
   imageTag: latest
   namespace: hospital
+  imagePullPolicy: IfNotPresent
+
+# Shared, non-secret platform configuration (mirrors infrastructure/k8s/base/configmap.yaml).
+# Overridden per-environment via -f values-<env>.yaml or --set.
+config:
+  ENVIRONMENT: dev
+  LOG_LEVEL: INFO
+  SPRING_PROFILES_ACTIVE: dev
+  KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+  KAFKA_TOPIC: hospital.events
+  EUREKA_URL: http://config-discovery-service:8888/eureka/
+  CONFIG_SERVER_URL: http://config-discovery-service:8888
+  DB_HOST: postgres
+  DB_PORT: "5432"
+  DB_USER: hospital
+  TIMESCALE_HOST: timescaledb
+  TIMESCALE_PORT: "5432"
+  TIMESCALE_DB: hospital_analytics
+  TIMESCALE_USER: hospital
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  KEYCLOAK_URL: http://keycloak:8080
+  KEYCLOAK_REALM: hospital
+  SMTP_HOST: mailhog
+  SMTP_PORT: "1025"
+  SMTP_FROM: no-reply@hospital.local
+  OTLP_ENDPOINT: http://otel-collector:4317
+  CORS_ALLOWED_ORIGINS: http://localhost:3000,http://localhost:3001,http://localhost:3002
+  AUTH_SERVICE_URL: http://auth-service:8081
+  PATIENT_SERVICE_URL: http://patient-service:8082
+  APPOINTMENT_SERVICE_URL: http://appointment-service:8083
+  DOCTOR_SERVICE_URL: http://doctor-service:8084
+  DEPARTMENT_SERVICE_URL: http://department-service:8085
+  ENCOUNTER_SERVICE_URL: http://encounter-service:8086
+  EHR_SERVICE_URL: http://ehr-service:8087
+  PRESCRIPTION_SERVICE_URL: http://prescription-service:8088
+  LAB_SERVICE_URL: http://lab-service:8089
+  PHARMACY_SERVICE_URL: http://pharmacy-inventory-service:8090
+  BILLING_SERVICE_URL: http://billing-service:8091
+  PAYMENT_SERVICE_URL: http://payment-service:8092
+  TRIAGE_SERVICE_URL: http://triage-service:8001
+  INSURANCE_SERVICE_URL: http://insurance-service:8002
+  NOTIFICATION_SERVICE_URL: http://notification-service:8003
+  ANALYTICS_SERVICE_URL: http://analytics-service:8004
+  ML_SERVICE_URL: http://ml-prediction-service:8005
+  DOCUMENT_SERVICE_URL: http://document-service:8006
+  AUDIT_SERVICE_URL: http://audit-service:8007
+
+# Dev-only placeholder secrets. Production deployments MUST override these
+# (e.g. via --set-file, a sealed-secret, or an ExternalSecret) rather than
+# committing real credentials.
+secrets:
+  DB_PASSWORD: hospital
+  POSTGRES_PASSWORD: hospital
+  TIMESCALE_PASSWORD: hospital
+  JWT_SECRET: dev-only-jwt-secret-change-me-0123456789abcdef0123456789abcdef
+  KEYCLOAK_ADMIN_USERNAME: admin
+  KEYCLOAK_ADMIN_PASSWORD: admin
+  REDIS_PASSWORD: ""
+  SMTP_PASSWORD: ""
+  TWILIO_ACCOUNT_SID: ""
+  TWILIO_AUTH_TOKEN: ""
+  TWILIO_FROM_NUMBER: ""
+  PAYMENT_GATEWAY_API_KEY: ""
+  PAYMENT_GATEWAY_WEBHOOK_SECRET: ""
+
+ingress:
+  enabled: true
+  className: nginx
+  host: hospital.local
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 16m
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+
+# Every application microservice, templatized from infrastructure/k8s/base/*.yaml.
+# healthPath applies to both readiness and liveness probes.
+services:
+  api-gateway:
+    image:
+      repository: hospital/api-gateway
+    port: 8080
+    replicas: 1
+    healthPath: /actuator/health
+    metricsPath: /actuator/prometheus
+    resources:
+      requests: { cpu: 200m, memory: 384Mi }
+      limits: { cpu: "1", memory: 768Mi }
+    env:
+      EUREKA_ENABLED: "true"
+  auth-service:
+    image:
+      repository: hospital/auth-service
+    port: 8081
+    replicas: 1
+    healthPath: /actuator/health
+    metricsPath: /actuator/prometheus
+    dbName: hospital_auth
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+  config-discovery-service:
+    image:
+      repository: hospital/config-discovery-service
+    port: 8888
+    replicas: 1
+    healthPath: /actuator/health
+    metricsPath: /actuator/prometheus
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+  patient-service:
+    image:
+      repository: hospital/patient-service
+    port: 8082
+    replicas: 1
+    healthPath: /actuator/health
+    metricsPath: /actuator/prometheus
+    dbName: hospital_patient
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+  appointment-service:
+    image:
+      repository: hospital/appointment-service
+    port: 8083
+    replicas: 1
+    healthPath: /actuator/health
+    metricsPath: /actuator/prometheus
+    dbName: hospital_appointment
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+  doctor-service:
+    image:
+      repository: hospital/doctor-service
+    port: 8084
+    replicas: 1
+    healthPath: /actuator/health
+    metricsPath: /actuator/prometheus
+    dbName: hospital_doctor
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+  department-service:
+    image:
+      repository: hospital/department-service
+    port: 8085
+    replicas: 1
+    healthPath: /actuator/health
+    metricsPath: /actuator/prometheus
+    dbName: hospital_department
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+  encounter-service:
+    image:
+      repository: hospital/encounter-service
+    port: 8086
+    replicas: 1
+    healthPath: /actuator/health
+    metricsPath: /actuator/prometheus
+    dbName: hospital_encounter
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+  ehr-service:
+    image:
+      repository: hospital/ehr-service
+    port: 8087
+    replicas: 1
+    healthPath: /actuator/health
+    metricsPath: /actuator/prometheus
+    dbName: hospital_ehr
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+  prescription-service:
+    image:
+      repository: hospital/prescription-service
+    port: 8088
+    replicas: 1
+    healthPath: /actuator/health
+    metricsPath: /actuator/prometheus
+    dbName: hospital_prescription
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+  lab-service:
+    image:
+      repository: hospital/lab-service
+    port: 8089
+    replicas: 1
+    healthPath: /actuator/health
+    metricsPath: /actuator/prometheus
+    dbName: hospital_lab
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+  pharmacy-inventory-service:
+    image:
+      repository: hospital/pharmacy-inventory-service
+    port: 8090
+    replicas: 1
+    healthPath: /actuator/health
+    metricsPath: /actuator/prometheus
+    dbName: hospital_pharmacy
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+  billing-service:
+    image:
+      repository: hospital/billing-service
+    port: 8091
+    replicas: 1
+    healthPath: /actuator/health
+    metricsPath: /actuator/prometheus
+    dbName: hospital_billing
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+  payment-service:
+    image:
+      repository: hospital/payment-service
+    port: 8092
+    replicas: 1
+    healthPath: /actuator/health
+    metricsPath: /actuator/prometheus
+    dbName: hospital_payment
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+  triage-service:
+    image:
+      repository: hospital/triage-service
+    port: 8001
+    replicas: 1
+    healthPath: /health
+    metricsPath: /metrics
+    dbName: hospital_triage
+    resources:
+      requests: { cpu: 100m, memory: 192Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+  insurance-service:
+    image:
+      repository: hospital/insurance-service
+    port: 8002
+    replicas: 1
+    healthPath: /health
+    metricsPath: /metrics
+    dbName: hospital_insurance
+    resources:
+      requests: { cpu: 100m, memory: 192Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+  notification-service:
+    image:
+      repository: hospital/notification-service
+    port: 8003
+    replicas: 1
+    healthPath: /health
+    metricsPath: /metrics
+    dbName: hospital_notification
+    resources:
+      requests: { cpu: 100m, memory: 192Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+  analytics-service:
+    image:
+      repository: hospital/analytics-service
+    port: 8004
+    replicas: 1
+    healthPath: /health
+    metricsPath: /metrics
+    resources:
+      requests: { cpu: 100m, memory: 192Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+  ml-prediction-service:
+    image:
+      repository: hospital/ml-prediction-service
+    port: 8005
+    replicas: 1
+    healthPath: /health
+    metricsPath: /metrics
+    dbName: hospital_ml
+    resources:
+      requests: { cpu: 100m, memory: 192Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+  document-service:
+    image:
+      repository: hospital/document-service
+    port: 8006
+    replicas: 1
+    healthPath: /health
+    metricsPath: /metrics
+    resources:
+      requests: { cpu: 100m, memory: 192Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+  audit-service:
+    image:
+      repository: hospital/audit-service
+    port: 8007
+    replicas: 1
+    healthPath: /health
+    metricsPath: /metrics
+    dbName: hospital_audit
+    resources:
+      requests: { cpu: 100m, memory: 192Mi }
+      limits: { cpu: 500m, memory: 512Mi }
