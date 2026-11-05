@@ -9,7 +9,85 @@ claim settlement and final payment.
 
 ## 0. System architecture
 
-### 0.1 ASCII overview
+### 0.1 Diagram
+
+```mermaid
+flowchart TB
+    Client["Client / Browser<br/>patient-portal · staff-console · admin-dashboard"]
+    GW["api-gateway<br/>routing · JWT · rate limit · CORS · correlation-id"]
+
+    Client -- "HTTPS :8000" --> GW
+
+    subgraph Edge["EDGE & SECURITY"]
+        Auth["auth-service<br/>(Keycloak, RBAC, OTP)"]
+        Config["config-discovery-service<br/>(Config / Eureka)"]
+    end
+    GW --> Auth
+    GW --> Config
+
+    subgraph JavaCore["PATIENT CORE & CLINICAL — Java / Spring Boot"]
+        Patient["patient-service"]
+        Appt["appointment-service<br/>(optimistic lock)"]
+        Doctor["doctor-service"]
+        Dept["department-service"]
+        Encounter["encounter-service<br/>(state machine)"]
+        Ehr["ehr-service<br/>(append-only)"]
+        Rx["prescription-service"]
+        Lab["lab-service"]
+        Pharmacy["pharmacy-inventory-service"]
+    end
+    GW --> Patient
+    GW --> Appt
+    GW --> Doctor
+    GW --> Dept
+    Appt --> Encounter
+    Encounter --> Ehr
+    Encounter --> Rx
+    Encounter --> Lab
+    Rx --> Pharmacy
+
+    subgraph FinCore["FINANCIAL — Java + Python"]
+        Billing["billing-service"]
+        Payment["payment-service<br/>(idempotent)"]
+        Insurance["insurance-service (Py)"]
+    end
+    Encounter --> Billing
+    Billing --> Payment
+    Billing --> Insurance
+
+    subgraph PyCore["INTELLIGENCE & SUPPORTING — Python / FastAPI"]
+        Triage["triage-service<br/>(ESI, rules + ML)"]
+        Notify["notification-service<br/>(Celery)"]
+        Analytics["analytics-service"]
+        ML["ml-prediction-service"]
+        Document["document-service"]
+        Audit["audit-service<br/>(cross-cutting watcher)"]
+    end
+    GW --> Triage
+
+    Kafka[("Kafka / MSK<br/>event backbone")]
+    Patient -- "PatientRegistered" --> Kafka
+    Appt -- "AppointmentBooked / Cancelled" --> Kafka
+    Encounter -- "EncounterCompleted" --> Kafka
+    Lab -- "LabResultReady" --> Kafka
+    Billing -- "InvoiceIssued" --> Kafka
+    Payment -- "PaymentCompleted / Failed" --> Kafka
+    Kafka --> Notify
+    Kafka --> Analytics
+    Kafka --> ML
+    Kafka --> Document
+    Kafka -.->|"watches every event"| Audit
+
+    PG[("PostgreSQL<br/>per-service DB")]
+    Mongo[("MongoDB<br/>(EHR)")]
+    Redis[("Redis / TimescaleDB<br/>cache · analytics")]
+    JavaCore --> PG
+    FinCore --> PG
+    Ehr --> Mongo
+    Analytics --> Redis
+```
+
+**Plain-text version (same picture, no renderer required):**
 
 ```
                                    +-------------------+
@@ -70,65 +148,6 @@ claim settlement and final payment.
                         shared-kernel (Java) / hospital_shared (Python)
                         cross-cutting: OpenTelemetry traces, correlation-ID,
                                        structured logs -> Loki, metrics -> Prometheus
-```
-
-### 0.2 Modern layered view
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  CLIENT LAYER                                                                │
-│  ┌──────────────┐   ┌──────────────┐   ┌──────────────────┐                 │
-│  │ Patient Portal│   │ Staff Console │   │ Admin Dashboard   │   (React/TS)  │
-│  └───────┬──────┘   └───────┬──────┘   └─────────┬─────────┘                 │
-└──────────┼──────────────────┼────────────────────┼───────────────────────────┘
-           └──────────────────┼────────────────────┘
-                               ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  EDGE LAYER                                                                  │
-│  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │  api-gateway  —  routing · JWT · rate limiting · CORS · correlation-ID  │  │
-│  └───────────────────────────────────────────────────────────────────────┘  │
-│  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │  auth-service (Keycloak)   ·   config-discovery-service (Config/Eureka)│  │
-│  └───────────────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────────┘
-                               │
-             ┌─────────────────┼──────────────────┬───────────────────┐
-             ▼                 ▼                  ▼                   ▼
-┌───────────────────┐ ┌────────────────────┐ ┌──────────────────┐ ┌────────────────────┐
-│ PATIENT CORE        │ │ CLINICAL WORKFLOW    │ │ FINANCIAL          │ │ INTELLIGENCE &       │
-│ (Java)              │ │ (Java)               │ │ (Java + Python)    │ │ SUPPORTING (Python)  │
-│                     │ │                      │ │                    │ │                      │
-│ patient-service     │ │ encounter-service    │ │ billing-service    │ │ notification-service  │
-│ appointment-service │ │ ehr-service           │ │ payment-service    │ │ analytics-service     │
-│ doctor-service       │ │ prescription-service │ │ insurance-service  │ │ ml-prediction-service  │
-│ department-service   │ │ lab-service           │ │  (Python)          │ │ document-service       │
-│ triage-service (Py)   │ │ pharmacy-inventory-   │ │                    │ │ audit-service          │
-│                     │ │   service             │ │                    │ │ (cross-cutting watcher)│
-└─────────┬───────────┘ └──────────┬────────────┘ └──────────┬─────────┘ └───────────┬────────────┘
-          │                        │                          │                       │
-          └────────────────────────┴────────────┬─────────────┴───────────────────────┘
-                                                  ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  EVENT BACKBONE                                                             │
-│  Kafka — PatientRegistered · AppointmentBooked · EncounterCompleted ·       │
-│          LabResultReady · InvoiceIssued · PaymentCompleted / PaymentFailed  │
-│  (schemas in contracts/avro, consumed via transactional outbox + Debezium)  │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                                  │
-                               ┌──────────────────┼──────────────────┐
-                               ▼                  ▼                  ▼
-                     ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐
-                     │ PostgreSQL        │ │ MongoDB (EHR)      │ │ Redis / Timescale  │
-                     │ (per-service DB)  │ │                    │ │ (cache / analytics)│
-                     └──────────────────┘ └──────────────────┘ └──────────────────┘
-
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  CROSS-CUTTING PLATFORM CONCERNS                                            │
-│  shared-kernel (Java) / hospital_shared (Python)  ·  OpenTelemetry tracing  │
-│  correlation-ID propagation  ·  structured logs → Loki  ·  metrics → Prometheus │
-│  Kubernetes (base + dev/staging/prod overlays)  ·  Helm  ·  Terraform       │
-└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
