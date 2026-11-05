@@ -1,0 +1,2 @@
+Hospital platform Helm chart scaffold installed.
+Populate templates for gateway, services, ingress, and config/secrets.

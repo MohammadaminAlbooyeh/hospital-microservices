@@ -1,0 +1,6 @@
+apiVersion: v2
+name: hospital-platform
+description: Hospital microservices platform chart (scaffold)
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
