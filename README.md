@@ -7,6 +7,132 @@ claim settlement and final payment.
 
 ---
 
+## 0. System architecture
+
+### 0.1 ASCII overview
+
+```
+                                   +-------------------+
+                                   |      Clients       |
+                                   |  patient-portal     |
+                                   |  staff-console       |
+                                   |  admin-dashboard      |
+                                   +----------+------------+
+                                              |
+                                              v
+                                   +-----------------------+
+                                   |      api-gateway       |
+                                   |  routing / JWT / rate   |
+                                   |  limit / CORS / corr-id |
+                                   +----------+--------------+
+                                              |
+                 +--------------+-------------+---------------+--------------+
+                 |              |                             |              |
+                 v              v                             v              v
+        +---------------+ +---------------+          +----------------+ +---------------+
+        | auth-service   | | config-       |          | patient-service | | appointment-  |
+        | (Keycloak,     | | discovery-    |          |                  | | service       |
+        |  RBAC, OTP)    | | service       |          |                  | | (opt. lock)   |
+        +---------------+ +---------------+          +----------------+ +---------------+
+                                                               |                  |
+                        +--------------------------------------+------------------+
+                        |                      |               |                  |
+                        v                      v               v                  v
+                +---------------+   +----------------+  +--------------+  +----------------+
+                | doctor-service |   | department-    |  | encounter-   |  | triage-service |
+                |                |   | service         |  | service      |  | (Python / ML)  |
+                +---------------+   +----------------+  +------+-------+  +----------------+
+                                                                 |
+                      +-------------------+---------------------+-------------------+
+                      |                   |                     |                   |
+                      v                   v                     v                   v
+              +---------------+   +---------------+     +---------------+   +----------------+
+              | ehr-service    |   | prescription-  |     | lab-service    |   | pharmacy-       |
+              | (append-only) |   | service        |     |                |   | inventory-service|
+              +---------------+   +---------------+     +---------------+   +----------------+
+                                                                 |
+                      +-------------------+---------------------+
+                      |                   |
+                      v                   v
+              +---------------+   +---------------+     +----------------+
+              | billing-service|   | payment-service|     | insurance-     |
+              |                |   | (idempotent)   |     | service (Py)   |
+              +---------------+   +---------------+     +----------------+
+
+   ---------------------------------------------------------------------------
+   Supporting / intelligence services (Python), all consuming Kafka events:
+   notification-service   analytics-service   ml-prediction-service
+   document-service       audit-service (cross-cutting, watches everything)
+   ---------------------------------------------------------------------------
+
+                        ALL SERVICES <----> KAFKA (event backbone)
+                        ALL SERVICES ----> own database (per-service)
+                        shared-kernel (Java) / hospital_shared (Python)
+                        cross-cutting: OpenTelemetry traces, correlation-ID,
+                                       structured logs -> Loki, metrics -> Prometheus
+```
+
+### 0.2 Modern layered view
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  CLIENT LAYER                                                                │
+│  ┌──────────────┐   ┌──────────────┐   ┌──────────────────┐                 │
+│  │ Patient Portal│   │ Staff Console │   │ Admin Dashboard   │   (React/TS)  │
+│  └───────┬──────┘   └───────┬──────┘   └─────────┬─────────┘                 │
+└──────────┼──────────────────┼────────────────────┼───────────────────────────┘
+           └──────────────────┼────────────────────┘
+                               ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  EDGE LAYER                                                                  │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │  api-gateway  —  routing · JWT · rate limiting · CORS · correlation-ID  │  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+│  ┌───────────────────────────────────────────────────────────────────────┐  │
+│  │  auth-service (Keycloak)   ·   config-discovery-service (Config/Eureka)│  │
+│  └───────────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────┘
+                               │
+             ┌─────────────────┼──────────────────┬───────────────────┐
+             ▼                 ▼                  ▼                   ▼
+┌───────────────────┐ ┌────────────────────┐ ┌──────────────────┐ ┌────────────────────┐
+│ PATIENT CORE        │ │ CLINICAL WORKFLOW    │ │ FINANCIAL          │ │ INTELLIGENCE &       │
+│ (Java)              │ │ (Java)               │ │ (Java + Python)    │ │ SUPPORTING (Python)  │
+│                     │ │                      │ │                    │ │                      │
+│ patient-service     │ │ encounter-service    │ │ billing-service    │ │ notification-service  │
+│ appointment-service │ │ ehr-service           │ │ payment-service    │ │ analytics-service     │
+│ doctor-service       │ │ prescription-service │ │ insurance-service  │ │ ml-prediction-service  │
+│ department-service   │ │ lab-service           │ │  (Python)          │ │ document-service       │
+│ triage-service (Py)   │ │ pharmacy-inventory-   │ │                    │ │ audit-service          │
+│                     │ │   service             │ │                    │ │ (cross-cutting watcher)│
+└─────────┬───────────┘ └──────────┬────────────┘ └──────────┬─────────┘ └───────────┬────────────┘
+          │                        │                          │                       │
+          └────────────────────────┴────────────┬─────────────┴───────────────────────┘
+                                                  ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  EVENT BACKBONE                                                             │
+│  Kafka — PatientRegistered · AppointmentBooked · EncounterCompleted ·       │
+│          LabResultReady · InvoiceIssued · PaymentCompleted / PaymentFailed  │
+│  (schemas in contracts/avro, consumed via transactional outbox + Debezium)  │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                                  │
+                               ┌──────────────────┼──────────────────┐
+                               ▼                  ▼                  ▼
+                     ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐
+                     │ PostgreSQL        │ │ MongoDB (EHR)      │ │ Redis / Timescale  │
+                     │ (per-service DB)  │ │                    │ │ (cache / analytics)│
+                     └──────────────────┘ └──────────────────┘ └──────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  CROSS-CUTTING PLATFORM CONCERNS                                            │
+│  shared-kernel (Java) / hospital_shared (Python)  ·  OpenTelemetry tracing  │
+│  correlation-ID propagation  ·  structured logs → Loki  ·  metrics → Prometheus │
+│  Kubernetes (base + dev/staging/prod overlays)  ·  Helm  ·  Terraform       │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
 ## 1. Why polyglot
 
 The split is not decorative — each stack owns the work it is actually better at.
