@@ -1,0 +1,7 @@
+[
+  { "name": "Cardiology", "floor": 3, "description": "Heart and vascular care" },
+  { "name": "General Medicine", "floor": 1, "description": "Primary and internal medicine" },
+  { "name": "Pediatrics", "floor": 2, "description": "Care for infants, children, and adolescents" },
+  { "name": "Orthopedics", "floor": 4, "description": "Musculoskeletal system care" },
+  { "name": "Emergency", "floor": 0, "description": "Emergency and trauma care" }
+]

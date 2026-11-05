@@ -1,0 +1,20 @@
+[
+  {
+    "patientNationalId": "SEED-PAT-0001",
+    "doctorLicenseNumber": "SEED-DOC-0001",
+    "slotStart": "2030-01-10T09:00:00Z",
+    "slotEnd": "2030-01-10T09:30:00Z"
+  },
+  {
+    "patientNationalId": "SEED-PAT-0002",
+    "doctorLicenseNumber": "SEED-DOC-0002",
+    "slotStart": "2030-01-10T10:00:00Z",
+    "slotEnd": "2030-01-10T10:30:00Z"
+  },
+  {
+    "patientNationalId": "SEED-PAT-0003",
+    "doctorLicenseNumber": "SEED-DOC-0003",
+    "slotStart": "2030-01-11T11:00:00Z",
+    "slotEnd": "2030-01-11T11:30:00Z"
+  }
+]

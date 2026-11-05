@@ -1,0 +1,47 @@
+[
+  {
+    "firstName": "Mei",
+    "lastName": "Tanaka",
+    "specialty": "Cardiology",
+    "department": "Cardiology",
+    "email": "mei.tanaka@seed.hospital-platform.test",
+    "phone": "+1-555-2001",
+    "licenseNumber": "SEED-DOC-0001"
+  },
+  {
+    "firstName": "Samuel",
+    "lastName": "Okoye",
+    "specialty": "General Practice",
+    "department": "General Medicine",
+    "email": "samuel.okoye@seed.hospital-platform.test",
+    "phone": "+1-555-2002",
+    "licenseNumber": "SEED-DOC-0002"
+  },
+  {
+    "firstName": "Priya",
+    "lastName": "Desai",
+    "specialty": "Pediatrics",
+    "department": "Pediatrics",
+    "email": "priya.desai@seed.hospital-platform.test",
+    "phone": "+1-555-2003",
+    "licenseNumber": "SEED-DOC-0003"
+  },
+  {
+    "firstName": "Lucas",
+    "lastName": "Bianchi",
+    "specialty": "Orthopedics",
+    "department": "Orthopedics",
+    "email": "lucas.bianchi@seed.hospital-platform.test",
+    "phone": "+1-555-2004",
+    "licenseNumber": "SEED-DOC-0004"
+  },
+  {
+    "firstName": "Hana",
+    "lastName": "Kim",
+    "specialty": "Emergency Medicine",
+    "department": "Emergency",
+    "email": "hana.kim@seed.hospital-platform.test",
+    "phone": "+1-555-2005",
+    "licenseNumber": "SEED-DOC-0005"
+  }
+]
