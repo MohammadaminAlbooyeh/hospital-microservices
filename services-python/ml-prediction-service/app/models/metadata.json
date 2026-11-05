@@ -1,0 +1,39 @@
+{
+  "generated_at": "2026-11-05T11:15:06.775603+00:00",
+  "no_show": {
+    "version": "1.0.0",
+    "trained_at": "2026-11-05T11:15:06.266131+00:00",
+    "features": [
+      "age",
+      "lead_days",
+      "prior_no_shows",
+      "distance_km",
+      "appointment_hour",
+      "day_of_week",
+      "has_insurance",
+      "is_new_patient"
+    ],
+    "metrics": {
+      "accuracy": 0.6958,
+      "roc_auc": 0.7403,
+      "positive_rate": 0.4092,
+      "samples": 2400
+    }
+  },
+  "length_of_stay": {
+    "version": "1.0.0",
+    "trained_at": "2026-11-05T11:15:06.604686+00:00",
+    "features": [
+      "age",
+      "severity",
+      "department_code",
+      "diagnoses_count",
+      "is_inpatient"
+    ],
+    "metrics": {
+      "mae_days": 0.4934,
+      "r2": 0.8824,
+      "samples": 2400
+    }
+  }
+}

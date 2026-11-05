@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     model_dir: str = "app/models"
     auto_train_on_startup: bool = True
+    no_show_model_file: str = "no_show_model.joblib"
+    length_of_stay_model_file: str = "length_of_stay_model.joblib"
 
 
 settings = Settings()
