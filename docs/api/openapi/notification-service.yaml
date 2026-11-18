@@ -4,9 +4,9 @@ info:
   description: >
     Email/SMS/push notifications — appointment reminders, lab-result alerts,
     payment reminders. Primarily a Kafka consumer (all 8 domain event types)
-    and Celery worker (app/workers/celery_app.py, app/channels/sms.py,
-    app/channels/email.py); the HTTP surface currently exposes only a health
-    status endpoint.
+    plus reminder logic (app/workers/reminders.py, app/channels/sms.py,
+    app/channels/email.py) triggered by an external CronJob hitting
+    /internal/reminders/run; there is no internal scheduler process.
   version: "1.0.0"
 servers:
   - url: http://localhost:8003
@@ -26,3 +26,42 @@ paths:
                 type: object
                 properties:
                   status: { type: string, example: "ok" }
+  /api/v1/notifications/internal/reminders/run:
+    post:
+      summary: Run the 24h-before appointment reminder job
+      description: >
+        Admin-triggerable endpoint for the reminder job. The caller (a k8s
+        CronJob or docker-compose cron sidecar) is responsible for sourcing
+        appointments due in the next reminder window — typically by querying
+        appointment-service and enriching with patient contact details.
+      operationId: runReminders
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                appointments:
+                  type: array
+                  items:
+                    type: object
+                    required: [appointment_id]
+                    properties:
+                      appointment_id: { type: string }
+                      first_name: { type: string, nullable: true }
+                      last_name: { type: string, nullable: true }
+                      email: { type: string, nullable: true }
+                      phone: { type: string, nullable: true }
+                      slot_start: { type: string, format: date-time, nullable: true }
+                      doctor_id: { type: string, nullable: true }
+      responses:
+        '200':
+          description: Reminder run summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  considered: { type: integer, example: 5 }
+                  sent: { type: integer, example: 4 }

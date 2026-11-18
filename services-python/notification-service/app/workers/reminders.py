@@ -61,7 +61,11 @@ async def send_appointment_reminder(
         return await deliver_notification(session, notification)
 
 
-async def send_due_reminders(appointments: list[dict[str, Any]]) -> int:
+async def send_due_reminders(
+    appointments: list[dict[str, Any]],
+    *,
+    session_factory=SessionLocal,
+) -> int:
     """Send reminders for a batch of appointments due in ~24h.
 
     `appointments` would normally come from a query against appointment-service
@@ -71,6 +75,6 @@ async def send_due_reminders(appointments: list[dict[str, Any]]) -> int:
     """
     sent = 0
     for appointment in appointments:
-        if await send_appointment_reminder(appointment):
+        if await send_appointment_reminder(appointment, session_factory=session_factory):
             sent += 1
     return sent

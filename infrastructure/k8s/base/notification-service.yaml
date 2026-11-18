@@ -105,3 +105,46 @@ spec:
     - name: http
       port: 8003
       targetPort: http
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: notification-service-reminders
+  labels:
+    app: notification-service
+    tier: cronjob
+    app.kubernetes.io/part-of: hospital-platform
+spec:
+  # Appointment reminders are a 24h-before job; notification-service has no
+  # scheduler of its own (app/workers/reminders.py), so this CronJob is the
+  # trigger, POSTing to the service's admin endpoint — see
+  # app/api/v1/routes.py:run_reminders. It currently posts an empty
+  # appointments list: sourcing "appointments due in ~24h" (a cross-service
+  # query/join against appointment-service + patient-service, kept out of
+  # notification-service to respect database-per-service) is a known
+  # follow-up, tracked separately from the trigger wiring itself.
+  schedule: "*/30 * * * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: notification-service
+            tier: cronjob
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: trigger-reminders
+              image: curlimages/curl:8.11.0
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  curl -fsS -X POST \
+                    -H 'Content-Type: application/json' \
+                    -d '{"appointments": []}' \
+                    http://notification-service:8003/api/v1/notifications/internal/reminders/run
+              resources:
+                requests: { cpu: 10m, memory: 32Mi }
+                limits: { cpu: 100m, memory: 64Mi }

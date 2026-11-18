@@ -1,0 +1,39 @@
+# Appointment reminders are a 24h-before job; notification-service has no
+# scheduler of its own (app/workers/reminders.py), so this CronJob is the
+# trigger, POSTing to the service's admin endpoint. It currently posts an
+# empty appointments list: sourcing "appointments due in ~24h" is a known
+# follow-up, tracked separately from the trigger wiring itself.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: notification-service-reminders
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "hospital-platform.serviceLabels" "notification-service" | nindent 4 }}
+    tier: cronjob
+spec:
+  schedule: "*/30 * * * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: notification-service
+            tier: cronjob
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: trigger-reminders
+              image: curlimages/curl:8.11.0
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  curl -fsS -X POST \
+                    -H 'Content-Type: application/json' \
+                    -d '{"appointments": []}' \
+                    http://notification-service:{{ (index .Values.services "notification-service").port }}/api/v1/notifications/internal/reminders/run
+              resources:
+                requests: { cpu: 10m, memory: 32Mi }
+                limits: { cpu: 100m, memory: 64Mi }
