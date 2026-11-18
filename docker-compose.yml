@@ -1,17 +1,9 @@
 name: hospital-platform
 
-# Full local stack: infra (via `include`) + every microservice that currently
-# has a Dockerfile, plus the patient-portal frontend.
+# Full local stack: infra (via `include`) + every microservice that has a
+# Dockerfile, plus all three frontends.
 #
 # Usage: make up  (== docker compose up -d --build)
-#
-# NOTE: audit-service, ml-prediction-service and notification-service are
-# intentionally left out for now — see the root README / task notes; their
-# Dockerfiles exist but expose ports that don't match .env.example / the k8s
-# ConfigMap yet (e.g. audit-service EXPOSEs 8004, clashing with
-# analytics-service, instead of 8007; notification-service EXPOSEs 8002,
-# clashing with insurance-service, instead of 8003). Add them back once that
-# is reconciled.
 
 include:
   - docker-compose.infra.yml
@@ -364,12 +356,24 @@ services:
 
   # ---------------------------------------------------------------------
   # Intelligence & supporting services (Python)
-  #
-  # analytics-service, document-service: Dockerfiles exist and are consistent
-  # with .env.example, so they're included. audit-service, ml-prediction-service
-  # and notification-service are deliberately SKIPPED here — see the note at
-  # the top of this file.
   # ---------------------------------------------------------------------
+  notification-service:
+    build:
+      context: .
+      dockerfile: services-python/notification-service/Dockerfile
+    env_file: .env
+    environment:
+      <<: *python-env
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-hospital}:${POSTGRES_PASSWORD:-hospital}@postgres:5432/hospital_notification
+    ports:
+      - "${NOTIFICATION_PORT:-8003}:8003"
+    networks: [hospital-net]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
   analytics-service:
     build:
       context: .
@@ -404,6 +408,61 @@ services:
       kafka:
         condition: service_healthy
 
+  audit-service:
+    build:
+      context: .
+      dockerfile: services-python/audit-service/Dockerfile
+    env_file: .env
+    environment:
+      <<: *python-env
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-hospital}:${POSTGRES_PASSWORD:-hospital}@postgres:5432/hospital_audit
+    ports:
+      - "${AUDIT_PORT:-8007}:8007"
+    networks: [hospital-net]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  ml-prediction-service:
+    build:
+      context: .
+      dockerfile: services-python/ml-prediction-service/Dockerfile
+    env_file: .env
+    environment:
+      <<: *python-env
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-hospital}:${POSTGRES_PASSWORD:-hospital}@postgres:5432/hospital_ml
+    ports:
+      - "${ML_PORT:-8005}:8005"
+    networks: [hospital-net]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------
+  # Reminder scheduler (local-dev stand-in for the k8s CronJob — see
+  # infrastructure/k8s/base/notification-service.yaml)
+  # ---------------------------------------------------------------------
+  notification-reminders-cron:
+    image: curlimages/curl:8.11.0
+    networks: [hospital-net]
+    depends_on:
+      - notification-service
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        while true; do
+          sleep 1800
+          curl -fsS -X POST \
+            -H 'Content-Type: application/json' \
+            -d '{"appointments": []}' \
+            http://notification-service:8003/api/v1/notifications/internal/reminders/run || true
+        done
+
   # ---------------------------------------------------------------------
   # Frontend
   # ---------------------------------------------------------------------
@@ -415,6 +474,30 @@ services:
       VITE_API_URL: ${PATIENT_PORTAL_API_URL:-http://localhost:8080}
     ports:
       - "3000:80"
+    networks: [hospital-net]
+    depends_on:
+      - api-gateway
+
+  staff-console:
+    build:
+      context: ./frontend/staff-console
+      dockerfile: Dockerfile
+    environment:
+      VITE_API_URL: ${STAFF_CONSOLE_API_URL:-http://localhost:8080}
+    ports:
+      - "3001:80"
+    networks: [hospital-net]
+    depends_on:
+      - api-gateway
+
+  admin-dashboard:
+    build:
+      context: ./frontend/admin-dashboard
+      dockerfile: Dockerfile
+    environment:
+      VITE_API_URL: ${ADMIN_DASHBOARD_API_URL:-http://localhost:8080}
+    ports:
+      - "3002:80"
     networks: [hospital-net]
     depends_on:
       - api-gateway
