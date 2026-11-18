@@ -37,29 +37,19 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: "pip"
 
-      - name: Install Poetry
-        run: pipx install poetry
+      - name: Install shared library
+        run: pip install ../shared
 
-      - name: Cache Poetry virtualenv
-        uses: actions/cache@v4
-        with:
-          path: services-python/${{ matrix.service }}/.venv
-          key: poetry-${{ runner.os }}-${{ matrix.service }}-${{ hashFiles(format('services-python/{0}/poetry.lock', matrix.service)) }}
-          restore-keys: |
-            poetry-${{ runner.os }}-${{ matrix.service }}-
-
-      - name: Configure Poetry to use in-project venv
-        run: poetry config virtualenvs.in-project true
-
-      - name: Install dependencies
-        run: poetry install --no-interaction
+      - name: Install service with dev dependencies
+        run: pip install -e ".[dev]"
 
       - name: Run tests
-        run: poetry run pytest
+        run: pytest -q
 
-  test-shared:
-    name: Test shared library
+  build-shared:
+    name: Build shared library
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -72,12 +62,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: "pip"
 
-      - name: Install Poetry
-        run: pipx install poetry
+      # hospital-shared has no standalone test suite of its own; it is
+      # exercised indirectly by every service's test job above. This job
+      # only verifies the package installs and imports cleanly.
+      - name: Install package
+        run: pip install .
 
-      - name: Install dependencies
-        run: poetry install --no-interaction
-
-      - name: Run tests
-        run: poetry run pytest
+      - name: Import sanity check
+        run: python -c "import hospital_shared"
