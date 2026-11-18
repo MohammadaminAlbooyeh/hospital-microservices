@@ -70,6 +70,8 @@ Use **Kafka** as the single event backbone for all 21 services.
   must deduplicate via `processed_events` (`docs/architecture.md` §5.4). This
   is a deliberate trade for durability and replay, not an oversight.
 - RabbitMQ (or SQS) remains a reasonable choice for a pure fire-and-forget
-  task queue; `notification-service`'s internal Celery broker uses Redis for
-  exactly that reason. Kafka is reserved for events that other services must
-  be able to replay or reconstruct history from.
+  task queue. `notification-service` doesn't need one: its one periodic job
+  (appointment reminders) is triggered by an external CronJob hitting an
+  admin endpoint rather than by a broker-backed worker. Kafka is reserved for
+  events that other services must be able to replay or reconstruct history
+  from.

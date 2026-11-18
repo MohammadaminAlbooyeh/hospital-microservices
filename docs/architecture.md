@@ -49,7 +49,7 @@ Patients / clinical staff / administrators
    │   REST + gRPC for queries, Kafka for events │
    └────────────┬───────────────────────────────┘
                 │
-   PostgreSQL · MongoDB · TimescaleDB · Redis · Kafka
+   PostgreSQL · TimescaleDB · Redis · Kafka
                 │
    Keycloak · payment gateway · SMS/email · insurance clearinghouse
 ```
@@ -109,7 +109,7 @@ same port on the Docker network.
 | # | Service | Stack | Port | Database / store | Responsibility |
 |---|---|---|---|---|---|
 | 9 | `encounter-service` | Java 21 | 8086 | PostgreSQL `hospital_encounter` | Visit entity and explicit state machine; orchestrates the clinical lifecycle |
-| 10 | `ehr-service` | Java 21 | 8087 | MongoDB `hospital_ehr` | Append-only, versioned clinical notes, ICD-10 diagnoses, history |
+| 10 | `ehr-service` | Java 21 | 8087 | PostgreSQL `hospital_ehr` | Append-only, versioned clinical notes, ICD-10 diagnoses, history |
 | 11 | `prescription-service` | Java 21 | 8088 | PostgreSQL `hospital_prescription` | Prescribing, dosage, interaction checks (delegated to a Python rule service) |
 | 12 | `lab-service` | Java 21 | 8089 | PostgreSQL `hospital_lab` | Lab orders, specimen tracking, results, imaging referral to PACS |
 | 13 | `pharmacy-inventory-service` | Java 21 | 8090 | PostgreSQL `hospital_pharmacy` | Stock levels, dispensing, reservations, low-stock and expiry alerts |
@@ -126,7 +126,7 @@ same port on the Docker network.
 
 | # | Service | Stack | Port | Database / store | Responsibility |
 |---|---|---|---|---|---|
-| 17 | `notification-service` | Python 3.12, FastAPI + Celery | 8003 | PostgreSQL `hospital_notification`; Redis broker | Email/SMS/push, reminders, lab and payment alerts; Kafka consumer |
+| 17 | `notification-service` | Python 3.12, FastAPI | 8003 | PostgreSQL `hospital_notification` | Email/SMS/push, reminders, lab and payment alerts; Kafka consumer |
 | 18 | `analytics-service` | Python 3.12, pandas | 8004 | TimescaleDB `hospital_analytics` | Wait time, no-show rate, bed occupancy, revenue by department |
 | 19 | `ml-prediction-service` | Python 3.12, scikit-learn | 8005 | PostgreSQL `hospital_ml` | No-show prediction, length-of-stay estimate, slot suggestions |
 | 20 | `document-service` | Python 3.12, FastAPI | 8006 | PostgreSQL `hospital_document`; object storage | PDF invoices, receipts, discharge summaries, certificates; OCR for uploads |
@@ -422,9 +422,10 @@ contract. Consequences:
   If patient-service deletes or merges a record, downstream services learn via
   an event rather than a cascading delete.
 - Each service chooses its own persistence technology: PostgreSQL for
-  transactional aggregates, MongoDB for the append-only EHR document shape,
-  TimescaleDB for analytics time series, Redis for caching and distributed
-  locks. This is intentional polyglot persistence.
+  transactional aggregates (including the append-only EHR table, where
+  immutability is enforced at the application layer — there is no update or
+  delete use case), TimescaleDB for analytics time series, Redis for caching
+  and distributed locks. This is intentional polyglot persistence.
 - Migrations are owned per service: Flyway for Java services, Alembic for
   Python services. A migration only touches its own database.
 
@@ -440,14 +441,14 @@ contract. Consequences:
 | department-service | PostgreSQL | `hospital_department` | Departments, rooms, beds, equipment |
 | triage-service | PostgreSQL | `hospital_triage` | Triage records, ESI scores |
 | encounter-service | PostgreSQL | `hospital_encounter` | Encounters, transition log, outbox |
-| ehr-service | MongoDB | `hospital_ehr` | Append-only clinical documents, versions |
+| ehr-service | PostgreSQL | `hospital_ehr` | Append-only clinical documents, versions (no update/delete endpoint) |
 | prescription-service | PostgreSQL | `hospital_prescription` | Prescriptions, prescription lines |
 | lab-service | PostgreSQL | `hospital_lab` | Orders, specimens, results |
 | pharmacy-inventory-service | PostgreSQL | `hospital_pharmacy` | Stock, reservations, dispenses, alerts |
 | billing-service | PostgreSQL | `hospital_billing` | Invoices, lines, idempotency, outbox |
 | payment-service | PostgreSQL | `hospital_payment` | Payment attempts, refunds, idempotency, outbox |
 | insurance-service | PostgreSQL | `hospital_insurance` | Policies, eligibility checks, claims |
-| notification-service | PostgreSQL | `hospital_notification` | Notification log, templates, delivery status; Redis for Celery |
+| notification-service | PostgreSQL | `hospital_notification` | Notification log, templates, delivery status |
 | analytics-service | TimescaleDB | `hospital_analytics` | Hypertables for waits, occupancy, revenue |
 | ml-prediction-service | PostgreSQL | `hospital_ml` | Feature snapshots, model metadata, predictions |
 | document-service | PostgreSQL + object storage | `hospital_document` | Document metadata; blobs in S3/MinIO |
@@ -455,8 +456,8 @@ contract. Consequences:
 | api-gateway | Redis | — | Rate-limit counters and short-lived caches; no business data |
 
 Local development may run one PostgreSQL container with one logical database
-per service, plus a separate TimescaleDB container, MongoDB, and Redis. The
-logical separation is the same as production even when the host is shared.
+per service, plus a separate TimescaleDB container and Redis. The logical
+separation is the same as production even when the host is shared.
 
 ### 7.3 Data protection
 
@@ -543,7 +544,7 @@ The repository is designed to run with Docker Compose.
 # 1. Create local environment
 cp .env.example .env
 
-# 2. Start infrastructure only (Kafka, PostgreSQL, TimescaleDB, MongoDB,
+# 2. Start infrastructure only (Kafka, PostgreSQL, TimescaleDB,
 #    Redis, Keycloak, schema registry)
 make infra-up
 # equivalent:
@@ -642,7 +643,7 @@ timeout. Business authorization remains in each service.
 | `payment-service` | 8092 | HTTP | |
 | `triage-service` | 8001 | HTTP | Python |
 | `insurance-service` | 8002 | HTTP | Python |
-| `notification-service` | 8003 | HTTP | Python; Celery workers are internal |
+| `notification-service` | 8003 | HTTP | Python; `/internal/reminders/run` is triggered by an external CronJob, not a worker process |
 | `analytics-service` | 8004 | HTTP | Python |
 | `ml-prediction-service` | 8005 | HTTP | Python |
 | `document-service` | 8006 | HTTP | Python |

@@ -57,7 +57,7 @@ flowchart TB
 
     subgraph PyCore["INTELLIGENCE & SUPPORTING — Python / FastAPI"]
         Triage["triage-service<br/>(ESI, rules + ML)"]
-        Notify["notification-service<br/>(Celery)"]
+        Notify["notification-service<br/>(reminder CronJob)"]
         Analytics["analytics-service"]
         ML["ml-prediction-service"]
         Document["document-service"]
@@ -79,11 +79,10 @@ flowchart TB
     Kafka -.->|"watches every event"| Audit
 
     PG[("PostgreSQL<br/>per-service DB")]
-    Mongo[("MongoDB<br/>(EHR)")]
     Redis[("Redis / TimescaleDB<br/>cache · analytics")]
     JavaCore --> PG
     FinCore --> PG
-    Ehr --> Mongo
+    Ehr --> PG
     Analytics --> Redis
 ```
 
@@ -211,7 +210,7 @@ The split is not decorative — each stack owns the work it is actually better a
 
 | # | Service | Stack | Responsibility |
 |---|---|---|---|
-| 17 | `notification-service` | Python + Celery | Email / SMS / push. Appointment reminders, lab-result alerts, payment reminders. Kafka consumer |
+| 17 | `notification-service` | Python + FastAPI | Email / SMS / push. Appointment reminders (triggered by an external CronJob hitting `/internal/reminders/run`), lab-result alerts, payment reminders. Kafka consumer |
 | 18 | `analytics-service` | Python + pandas | Management dashboards: average wait time, no-show rate, bed occupancy, revenue by department |
 | 19 | `ml-prediction-service` | Python + scikit-learn | No-show prediction, length-of-stay estimation, optimal slot suggestion |
 | 20 | `document-service` | Python | PDF generation (invoices, discharge summaries, medical certificates) and OCR of uploaded documents |
@@ -361,7 +360,7 @@ hospital-platform/
 │   ├── insurance-service/
 │   ├── notification-service/
 │   │   └── app/
-│   │       ├── workers/celery_app.py
+│   │       ├── workers/reminders.py
 │   │       ├── channels/sms.py
 │   │       ├── channels/email.py
 │   │       └── templates/
@@ -468,8 +467,8 @@ Throughout every step:
 ## 5. Architectural principles
 
 **Database per service.** No shared schema, no cross-service joins. PostgreSQL for transactional
-services, MongoDB for the EHR (flexible document shape), Redis for caching and distributed locks,
-TimescaleDB for analytics time series.
+services, including the EHR (append-only, enforced at the application layer), Redis for caching
+and distributed locks, TimescaleDB for analytics time series.
 
 **Saga pattern.** Payment, invoicing and inventory cannot live inside one ACID transaction. The
 checkout flow is a choreographed saga with explicit compensating actions. This is the part that

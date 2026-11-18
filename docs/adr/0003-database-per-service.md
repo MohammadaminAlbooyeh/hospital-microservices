@@ -21,11 +21,10 @@ With 21 independently deployable services, a shared schema means:
 - Two services competing for locks on the same rows during their own
   transactions (classic hot-row contention), even when their business logic
   has nothing to do with each other.
-- No way to pick the right storage engine per workload. `ehr-service` needs
-  an append-only, flexible document shape (clinical notes vary in structure);
-  `analytics-service` needs time-series aggregation; `api-gateway` needs
-  nothing but a fast counter store for rate limiting. One shared PostgreSQL
-  schema forces every one of those into the same relational model.
+- No way to pick the right storage engine per workload. `analytics-service`
+  needs time-series aggregation; `api-gateway` needs nothing but a fast
+  counter store for rate limiting. One shared PostgreSQL schema forces every
+  one of those into the same relational model.
 - A service cannot be deployed, scaled, or restored independently if its data
   lives in the same database as five other services.
 
@@ -36,13 +35,12 @@ writer to it. Downstream services never read another service's tables
 directly:
 
 - PostgreSQL for the transactional services (`hospital_patient`,
-  `hospital_appointment`, `hospital_billing`, `hospital_payment`, …).
-- MongoDB for `ehr-service` (`hospital_ehr`) — append-only, versioned
-  clinical documents don't fit a fixed relational shape well.
+  `hospital_appointment`, `hospital_billing`, `hospital_payment`, …), including
+  `ehr-service` (`hospital_ehr`) — see Amendment below.
 - TimescaleDB for `analytics-service` (`hospital_analytics`) — hypertables
   for wait-time, occupancy, and revenue time series.
-- Redis for `api-gateway` rate-limit counters and the `notification-service`
-  Celery broker — no business data, just ephemeral state.
+- Redis for `api-gateway` rate-limit counters — no business data, just
+  ephemeral state.
 
 This is intentional polyglot persistence, not just polyglot compute (see
 `0001-why-polyglot.md`). The only coupling between services is an opaque ID
@@ -75,3 +73,15 @@ a migration only ever touches its own database.
   instead of one. Local development may run them all inside one PostgreSQL
   instance as separate logical databases without weakening the boundary —
   the separation is about ownership, not physical server count.
+
+## Amendment (2026-11-18)
+
+`ehr-service` was implemented on PostgreSQL + JPA + Flyway rather than
+MongoDB. Append-only semantics for clinical notes are enforced at the
+application layer (only a create use case exists; there is no update or
+delete endpoint), not by the storage engine. The original rationale for a
+document store — clinical notes "vary in structure" — did not end up
+requiring a flexible schema in practice, and staying on PostgreSQL avoids
+introducing a fourth persistence technology into the platform for a single
+service. The per-service-ownership principle this ADR establishes is
+unaffected; only the choice of engine for this one service changed.
